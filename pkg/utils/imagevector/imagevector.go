@@ -19,19 +19,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/utils"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 // ReadImageVector reads the image.yaml in the chart directory, unmarshals it
 // into a []*ImageSource type and returns it.
-func ReadImageVector() (ImageVector, error) {
-	path := filepath.Join(common.ChartPath, "images.yaml")
-
+func ReadImageVector(path string) (ImageVector, error) {
 	vector, err := readImageVector(path)
 	if err != nil {
 		return nil, err
