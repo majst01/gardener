@@ -843,6 +843,86 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*MetalCloud)(nil), (*garden.MetalCloud)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalCloud_To_garden_MetalCloud(a.(*MetalCloud), b.(*garden.MetalCloud), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalCloud)(nil), (*MetalCloud)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalCloud_To_v1beta1_MetalCloud(a.(*garden.MetalCloud), b.(*MetalCloud), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalConstraints)(nil), (*garden.MetalConstraints)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalConstraints_To_garden_MetalConstraints(a.(*MetalConstraints), b.(*garden.MetalConstraints), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalConstraints)(nil), (*MetalConstraints)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalConstraints_To_v1beta1_MetalConstraints(a.(*garden.MetalConstraints), b.(*MetalConstraints), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalLoadBalancerProvider)(nil), (*garden.MetalLoadBalancerProvider)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalLoadBalancerProvider_To_garden_MetalLoadBalancerProvider(a.(*MetalLoadBalancerProvider), b.(*garden.MetalLoadBalancerProvider), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalLoadBalancerProvider)(nil), (*MetalLoadBalancerProvider)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalLoadBalancerProvider_To_v1beta1_MetalLoadBalancerProvider(a.(*garden.MetalLoadBalancerProvider), b.(*MetalLoadBalancerProvider), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalMachineImage)(nil), (*garden.MetalMachineImage)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalMachineImage_To_garden_MetalMachineImage(a.(*MetalMachineImage), b.(*garden.MetalMachineImage), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalMachineImage)(nil), (*MetalMachineImage)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalMachineImage_To_v1beta1_MetalMachineImage(a.(*garden.MetalMachineImage), b.(*MetalMachineImage), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalMachineType)(nil), (*garden.MetalMachineType)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalMachineType_To_garden_MetalMachineType(a.(*MetalMachineType), b.(*garden.MetalMachineType), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalMachineType)(nil), (*MetalMachineType)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalMachineType_To_v1beta1_MetalMachineType(a.(*garden.MetalMachineType), b.(*MetalMachineType), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalNetworks)(nil), (*garden.MetalNetworks)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalNetworks_To_garden_MetalNetworks(a.(*MetalNetworks), b.(*garden.MetalNetworks), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalNetworks)(nil), (*MetalNetworks)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalNetworks_To_v1beta1_MetalNetworks(a.(*garden.MetalNetworks), b.(*MetalNetworks), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalProfile)(nil), (*garden.MetalProfile)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalProfile_To_garden_MetalProfile(a.(*MetalProfile), b.(*garden.MetalProfile), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalProfile)(nil), (*MetalProfile)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalProfile_To_v1beta1_MetalProfile(a.(*garden.MetalProfile), b.(*MetalProfile), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*MetalWorker)(nil), (*garden.MetalWorker)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetalWorker_To_garden_MetalWorker(a.(*MetalWorker), b.(*garden.MetalWorker), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*garden.MetalWorker)(nil), (*MetalWorker)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_garden_MetalWorker_To_v1beta1_MetalWorker(a.(*garden.MetalWorker), b.(*MetalWorker), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*Monocular)(nil), (*garden.Monocular)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Monocular_To_garden_Monocular(a.(*Monocular), b.(*garden.Monocular), scope)
 	}); err != nil {
@@ -2293,6 +2373,15 @@ func autoConvert_v1beta1_Cloud_To_garden_Cloud(in *Cloud, out *garden.Cloud, s c
 	} else {
 		out.OpenStack = nil
 	}
+	if in.Metal != nil {
+		in, out := &in.Metal, &out.Metal
+		*out = new(garden.MetalCloud)
+		if err := Convert_v1beta1_MetalCloud_To_garden_MetalCloud(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Metal = nil
+	}
 	if in.Alicloud != nil {
 		in, out := &in.Alicloud, &out.Alicloud
 		*out = new(garden.Alicloud)
@@ -2351,6 +2440,15 @@ func autoConvert_garden_Cloud_To_v1beta1_Cloud(in *garden.Cloud, out *Cloud, s c
 		}
 	} else {
 		out.OpenStack = nil
+	}
+	if in.Metal != nil {
+		in, out := &in.Metal, &out.Metal
+		*out = new(MetalCloud)
+		if err := Convert_garden_MetalCloud_To_v1beta1_MetalCloud(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Metal = nil
 	}
 	if in.Alicloud != nil {
 		in, out := &in.Alicloud, &out.Alicloud
@@ -2422,7 +2520,17 @@ func Convert_garden_CloudProfile_To_v1beta1_CloudProfile(in *garden.CloudProfile
 
 func autoConvert_v1beta1_CloudProfileList_To_garden_CloudProfileList(in *CloudProfileList, out *garden.CloudProfileList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]garden.CloudProfile)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]garden.CloudProfile, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_CloudProfile_To_garden_CloudProfile(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2433,7 +2541,17 @@ func Convert_v1beta1_CloudProfileList_To_garden_CloudProfileList(in *CloudProfil
 
 func autoConvert_garden_CloudProfileList_To_v1beta1_CloudProfileList(in *garden.CloudProfileList, out *CloudProfileList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]CloudProfile)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]CloudProfile, len(*in))
+		for i := range *in {
+			if err := Convert_garden_CloudProfile_To_v1beta1_CloudProfile(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2450,6 +2568,7 @@ func autoConvert_v1beta1_CloudProfileSpec_To_garden_CloudProfileSpec(in *CloudPr
 	out.Alicloud = (*garden.AlicloudProfile)(unsafe.Pointer(in.Alicloud))
 	out.Local = (*garden.LocalProfile)(unsafe.Pointer(in.Local))
 	out.CABundle = (*string)(unsafe.Pointer(in.CABundle))
+	out.Metal = (*garden.MetalProfile)(unsafe.Pointer(in.Metal))
 	return nil
 }
 
@@ -2464,6 +2583,7 @@ func autoConvert_garden_CloudProfileSpec_To_v1beta1_CloudProfileSpec(in *garden.
 	out.GCP = (*GCPProfile)(unsafe.Pointer(in.GCP))
 	out.OpenStack = (*OpenStackProfile)(unsafe.Pointer(in.OpenStack))
 	out.Alicloud = (*AlicloudProfile)(unsafe.Pointer(in.Alicloud))
+	out.Metal = (*MetalProfile)(unsafe.Pointer(in.Metal))
 	out.Local = (*LocalProfile)(unsafe.Pointer(in.Local))
 	out.CABundle = (*string)(unsafe.Pointer(in.CABundle))
 	return nil
@@ -3492,6 +3612,238 @@ func autoConvert_garden_MaintenanceTimeWindow_To_v1beta1_MaintenanceTimeWindow(i
 // Convert_garden_MaintenanceTimeWindow_To_v1beta1_MaintenanceTimeWindow is an autogenerated conversion function.
 func Convert_garden_MaintenanceTimeWindow_To_v1beta1_MaintenanceTimeWindow(in *garden.MaintenanceTimeWindow, out *MaintenanceTimeWindow, s conversion.Scope) error {
 	return autoConvert_garden_MaintenanceTimeWindow_To_v1beta1_MaintenanceTimeWindow(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalCloud_To_garden_MetalCloud(in *MetalCloud, out *garden.MetalCloud, s conversion.Scope) error {
+	out.LoadBalancerProvider = in.LoadBalancerProvider
+	out.MachineImage = (*garden.MetalMachineImage)(unsafe.Pointer(in.MachineImage))
+	if err := Convert_v1beta1_MetalNetworks_To_garden_MetalNetworks(&in.Networks, &out.Networks, s); err != nil {
+		return err
+	}
+	if in.Workers != nil {
+		in, out := &in.Workers, &out.Workers
+		*out = make([]garden.MetalWorker, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_MetalWorker_To_garden_MetalWorker(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Workers = nil
+	}
+	out.Zones = *(*[]string)(unsafe.Pointer(&in.Zones))
+	return nil
+}
+
+// Convert_v1beta1_MetalCloud_To_garden_MetalCloud is an autogenerated conversion function.
+func Convert_v1beta1_MetalCloud_To_garden_MetalCloud(in *MetalCloud, out *garden.MetalCloud, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalCloud_To_garden_MetalCloud(in, out, s)
+}
+
+func autoConvert_garden_MetalCloud_To_v1beta1_MetalCloud(in *garden.MetalCloud, out *MetalCloud, s conversion.Scope) error {
+	out.LoadBalancerProvider = in.LoadBalancerProvider
+	out.MachineImage = (*MetalMachineImage)(unsafe.Pointer(in.MachineImage))
+	if err := Convert_garden_MetalNetworks_To_v1beta1_MetalNetworks(&in.Networks, &out.Networks, s); err != nil {
+		return err
+	}
+	if in.Workers != nil {
+		in, out := &in.Workers, &out.Workers
+		*out = make([]MetalWorker, len(*in))
+		for i := range *in {
+			if err := Convert_garden_MetalWorker_To_v1beta1_MetalWorker(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Workers = nil
+	}
+	out.Zones = *(*[]string)(unsafe.Pointer(&in.Zones))
+	return nil
+}
+
+// Convert_garden_MetalCloud_To_v1beta1_MetalCloud is an autogenerated conversion function.
+func Convert_garden_MetalCloud_To_v1beta1_MetalCloud(in *garden.MetalCloud, out *MetalCloud, s conversion.Scope) error {
+	return autoConvert_garden_MetalCloud_To_v1beta1_MetalCloud(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalConstraints_To_garden_MetalConstraints(in *MetalConstraints, out *garden.MetalConstraints, s conversion.Scope) error {
+	out.DNSProviders = *(*[]garden.DNSProviderConstraint)(unsafe.Pointer(&in.DNSProviders))
+	if err := Convert_v1beta1_KubernetesConstraints_To_garden_KubernetesConstraints(&in.Kubernetes, &out.Kubernetes, s); err != nil {
+		return err
+	}
+	out.LoadBalancerProviders = *(*[]garden.MetalLoadBalancerProvider)(unsafe.Pointer(&in.LoadBalancerProviders))
+	out.MachineImages = *(*[]garden.MetalMachineImage)(unsafe.Pointer(&in.MachineImages))
+	out.MachineTypes = *(*[]garden.MetalMachineType)(unsafe.Pointer(&in.MachineTypes))
+	out.Zones = *(*[]garden.Zone)(unsafe.Pointer(&in.Zones))
+	return nil
+}
+
+// Convert_v1beta1_MetalConstraints_To_garden_MetalConstraints is an autogenerated conversion function.
+func Convert_v1beta1_MetalConstraints_To_garden_MetalConstraints(in *MetalConstraints, out *garden.MetalConstraints, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalConstraints_To_garden_MetalConstraints(in, out, s)
+}
+
+func autoConvert_garden_MetalConstraints_To_v1beta1_MetalConstraints(in *garden.MetalConstraints, out *MetalConstraints, s conversion.Scope) error {
+	out.DNSProviders = *(*[]DNSProviderConstraint)(unsafe.Pointer(&in.DNSProviders))
+	if err := Convert_garden_KubernetesConstraints_To_v1beta1_KubernetesConstraints(&in.Kubernetes, &out.Kubernetes, s); err != nil {
+		return err
+	}
+	out.LoadBalancerProviders = *(*[]MetalLoadBalancerProvider)(unsafe.Pointer(&in.LoadBalancerProviders))
+	out.MachineImages = *(*[]MetalMachineImage)(unsafe.Pointer(&in.MachineImages))
+	out.MachineTypes = *(*[]MetalMachineType)(unsafe.Pointer(&in.MachineTypes))
+	out.Zones = *(*[]Zone)(unsafe.Pointer(&in.Zones))
+	return nil
+}
+
+// Convert_garden_MetalConstraints_To_v1beta1_MetalConstraints is an autogenerated conversion function.
+func Convert_garden_MetalConstraints_To_v1beta1_MetalConstraints(in *garden.MetalConstraints, out *MetalConstraints, s conversion.Scope) error {
+	return autoConvert_garden_MetalConstraints_To_v1beta1_MetalConstraints(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalLoadBalancerProvider_To_garden_MetalLoadBalancerProvider(in *MetalLoadBalancerProvider, out *garden.MetalLoadBalancerProvider, s conversion.Scope) error {
+	out.Name = in.Name
+	return nil
+}
+
+// Convert_v1beta1_MetalLoadBalancerProvider_To_garden_MetalLoadBalancerProvider is an autogenerated conversion function.
+func Convert_v1beta1_MetalLoadBalancerProvider_To_garden_MetalLoadBalancerProvider(in *MetalLoadBalancerProvider, out *garden.MetalLoadBalancerProvider, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalLoadBalancerProvider_To_garden_MetalLoadBalancerProvider(in, out, s)
+}
+
+func autoConvert_garden_MetalLoadBalancerProvider_To_v1beta1_MetalLoadBalancerProvider(in *garden.MetalLoadBalancerProvider, out *MetalLoadBalancerProvider, s conversion.Scope) error {
+	out.Name = in.Name
+	return nil
+}
+
+// Convert_garden_MetalLoadBalancerProvider_To_v1beta1_MetalLoadBalancerProvider is an autogenerated conversion function.
+func Convert_garden_MetalLoadBalancerProvider_To_v1beta1_MetalLoadBalancerProvider(in *garden.MetalLoadBalancerProvider, out *MetalLoadBalancerProvider, s conversion.Scope) error {
+	return autoConvert_garden_MetalLoadBalancerProvider_To_v1beta1_MetalLoadBalancerProvider(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalMachineImage_To_garden_MetalMachineImage(in *MetalMachineImage, out *garden.MetalMachineImage, s conversion.Scope) error {
+	out.Name = garden.MachineImageName(in.Name)
+	out.Image = in.Image
+	return nil
+}
+
+// Convert_v1beta1_MetalMachineImage_To_garden_MetalMachineImage is an autogenerated conversion function.
+func Convert_v1beta1_MetalMachineImage_To_garden_MetalMachineImage(in *MetalMachineImage, out *garden.MetalMachineImage, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalMachineImage_To_garden_MetalMachineImage(in, out, s)
+}
+
+func autoConvert_garden_MetalMachineImage_To_v1beta1_MetalMachineImage(in *garden.MetalMachineImage, out *MetalMachineImage, s conversion.Scope) error {
+	out.Name = MachineImageName(in.Name)
+	out.Image = in.Image
+	return nil
+}
+
+// Convert_garden_MetalMachineImage_To_v1beta1_MetalMachineImage is an autogenerated conversion function.
+func Convert_garden_MetalMachineImage_To_v1beta1_MetalMachineImage(in *garden.MetalMachineImage, out *MetalMachineImage, s conversion.Scope) error {
+	return autoConvert_garden_MetalMachineImage_To_v1beta1_MetalMachineImage(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalMachineType_To_garden_MetalMachineType(in *MetalMachineType, out *garden.MetalMachineType, s conversion.Scope) error {
+	if err := Convert_v1beta1_MachineType_To_garden_MachineType(&in.MachineType, &out.MachineType, s); err != nil {
+		return err
+	}
+	out.VolumeType = in.VolumeType
+	out.VolumeSize = in.VolumeSize
+	return nil
+}
+
+// Convert_v1beta1_MetalMachineType_To_garden_MetalMachineType is an autogenerated conversion function.
+func Convert_v1beta1_MetalMachineType_To_garden_MetalMachineType(in *MetalMachineType, out *garden.MetalMachineType, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalMachineType_To_garden_MetalMachineType(in, out, s)
+}
+
+func autoConvert_garden_MetalMachineType_To_v1beta1_MetalMachineType(in *garden.MetalMachineType, out *MetalMachineType, s conversion.Scope) error {
+	if err := Convert_garden_MachineType_To_v1beta1_MachineType(&in.MachineType, &out.MachineType, s); err != nil {
+		return err
+	}
+	out.VolumeType = in.VolumeType
+	out.VolumeSize = in.VolumeSize
+	return nil
+}
+
+// Convert_garden_MetalMachineType_To_v1beta1_MetalMachineType is an autogenerated conversion function.
+func Convert_garden_MetalMachineType_To_v1beta1_MetalMachineType(in *garden.MetalMachineType, out *MetalMachineType, s conversion.Scope) error {
+	return autoConvert_garden_MetalMachineType_To_v1beta1_MetalMachineType(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalNetworks_To_garden_MetalNetworks(in *MetalNetworks, out *garden.MetalNetworks, s conversion.Scope) error {
+	if err := Convert_v1beta1_K8SNetworks_To_garden_K8SNetworks(&in.K8SNetworks, &out.K8SNetworks, s); err != nil {
+		return err
+	}
+	out.Workers = *(*[]garden.CIDR)(unsafe.Pointer(&in.Workers))
+	return nil
+}
+
+// Convert_v1beta1_MetalNetworks_To_garden_MetalNetworks is an autogenerated conversion function.
+func Convert_v1beta1_MetalNetworks_To_garden_MetalNetworks(in *MetalNetworks, out *garden.MetalNetworks, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalNetworks_To_garden_MetalNetworks(in, out, s)
+}
+
+func autoConvert_garden_MetalNetworks_To_v1beta1_MetalNetworks(in *garden.MetalNetworks, out *MetalNetworks, s conversion.Scope) error {
+	if err := Convert_garden_K8SNetworks_To_v1beta1_K8SNetworks(&in.K8SNetworks, &out.K8SNetworks, s); err != nil {
+		return err
+	}
+	out.Workers = *(*[]CIDR)(unsafe.Pointer(&in.Workers))
+	return nil
+}
+
+// Convert_garden_MetalNetworks_To_v1beta1_MetalNetworks is an autogenerated conversion function.
+func Convert_garden_MetalNetworks_To_v1beta1_MetalNetworks(in *garden.MetalNetworks, out *MetalNetworks, s conversion.Scope) error {
+	return autoConvert_garden_MetalNetworks_To_v1beta1_MetalNetworks(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalProfile_To_garden_MetalProfile(in *MetalProfile, out *garden.MetalProfile, s conversion.Scope) error {
+	if err := Convert_v1beta1_MetalConstraints_To_garden_MetalConstraints(&in.Constraints, &out.Constraints, s); err != nil {
+		return err
+	}
+	out.DNSServers = *(*[]string)(unsafe.Pointer(&in.DNSServers))
+	return nil
+}
+
+// Convert_v1beta1_MetalProfile_To_garden_MetalProfile is an autogenerated conversion function.
+func Convert_v1beta1_MetalProfile_To_garden_MetalProfile(in *MetalProfile, out *garden.MetalProfile, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalProfile_To_garden_MetalProfile(in, out, s)
+}
+
+func autoConvert_garden_MetalProfile_To_v1beta1_MetalProfile(in *garden.MetalProfile, out *MetalProfile, s conversion.Scope) error {
+	if err := Convert_garden_MetalConstraints_To_v1beta1_MetalConstraints(&in.Constraints, &out.Constraints, s); err != nil {
+		return err
+	}
+	out.DNSServers = *(*[]string)(unsafe.Pointer(&in.DNSServers))
+	return nil
+}
+
+// Convert_garden_MetalProfile_To_v1beta1_MetalProfile is an autogenerated conversion function.
+func Convert_garden_MetalProfile_To_v1beta1_MetalProfile(in *garden.MetalProfile, out *MetalProfile, s conversion.Scope) error {
+	return autoConvert_garden_MetalProfile_To_v1beta1_MetalProfile(in, out, s)
+}
+
+func autoConvert_v1beta1_MetalWorker_To_garden_MetalWorker(in *MetalWorker, out *garden.MetalWorker, s conversion.Scope) error {
+	if err := Convert_v1beta1_Worker_To_garden_Worker(&in.Worker, &out.Worker, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_v1beta1_MetalWorker_To_garden_MetalWorker is an autogenerated conversion function.
+func Convert_v1beta1_MetalWorker_To_garden_MetalWorker(in *MetalWorker, out *garden.MetalWorker, s conversion.Scope) error {
+	return autoConvert_v1beta1_MetalWorker_To_garden_MetalWorker(in, out, s)
+}
+
+func autoConvert_garden_MetalWorker_To_v1beta1_MetalWorker(in *garden.MetalWorker, out *MetalWorker, s conversion.Scope) error {
+	if err := Convert_garden_Worker_To_v1beta1_Worker(&in.Worker, &out.Worker, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_garden_MetalWorker_To_v1beta1_MetalWorker is an autogenerated conversion function.
+func Convert_garden_MetalWorker_To_v1beta1_MetalWorker(in *garden.MetalWorker, out *MetalWorker, s conversion.Scope) error {
+	return autoConvert_garden_MetalWorker_To_v1beta1_MetalWorker(in, out, s)
 }
 
 func autoConvert_v1beta1_Monocular_To_garden_Monocular(in *Monocular, out *garden.Monocular, s conversion.Scope) error {

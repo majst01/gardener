@@ -216,6 +216,14 @@ func ValidateCloudProfileSpec(spec *garden.CloudProfileSpec, fldPath *field.Path
 		}
 	}
 
+	if spec.Metal != nil {
+		// FIXME add proper validations.
+		allErrs = append(allErrs, validateKubernetesConstraints(spec.Metal.Constraints.Kubernetes, fldPath.Child("metal", "constraints", "kubernetes"))...)
+		//allErrs = append(allErrs, validateMetalMachineImages(spec.Metal.Constraints.MachineImages, fldPath.Child("metal", "constraints", "machineImages"))...)
+		//allErrs = append(allErrs, validateMetalMachineTypeConstraints(spec.Metal.Constraints.MachineTypes, fldPath.Child("metal", "constraints", "machineTypes"))...)
+		allErrs = append(allErrs, validateZones(spec.Metal.Constraints.Zones, fldPath.Child("metal", "constraints", "zones"))...)
+	}
+
 	if spec.CABundle != nil {
 		_, err := utils.DecodeCertificate([]byte(*(spec.CABundle)))
 		if err != nil {
@@ -1346,6 +1354,54 @@ func validateCloud(cloud garden.Cloud, fldPath *field.Path) field.ErrorList {
 		allErrs = append(allErrs, ValidateWorkers(workers, workersPath)...)
 	}
 
+	metal := cloud.Metal
+	metalPath := fldPath.Child("metal")
+	if metal != nil {
+		zoneCount := len(metal.Zones)
+		if zoneCount == 0 {
+			allErrs = append(allErrs, field.Required(metalPath.Child("zones"), "must specify at least one zone"))
+			return allErrs
+		}
+
+		nodes, _, _, networkErrors := transformK8SNetworks(metal.Networks.K8SNetworks, metalPath.Child("networks"))
+		allErrs = append(allErrs, networkErrors...)
+
+		if len(metal.Networks.Workers) != zoneCount {
+			allErrs = append(allErrs, field.Invalid(metalPath.Child("networks", "workers"), metal.Networks.Workers, "must specify as many workers networks as zones"))
+		}
+
+		workerCIDRs := make([]cidrvalidation.CIDR, 0, len(metal.Networks.Workers))
+		for i, cidr := range metal.Networks.Workers {
+			workerCIDR := cidrvalidation.NewCIDR(cidr, metalPath.Child("networks", "workers").Index(i))
+			workerCIDRs = append(workerCIDRs, workerCIDR)
+			allErrs = append(allErrs, workerCIDR.ValidateParse()...)
+		}
+
+		allErrs = append(allErrs, validateCIDROVerlap(workerCIDRs, workerCIDRs, false)...)
+
+		if nodes != nil {
+			allErrs = append(allErrs, nodes.ValidateSubset(workerCIDRs...)...)
+		}
+
+		workersPath := metalPath.Child("workers")
+		if len(metal.Workers) == 0 {
+			allErrs = append(allErrs, field.Required(workersPath, "must specify at least one worker"))
+			return allErrs
+		}
+
+		var workers []garden.Worker
+		for i, worker := range metal.Workers {
+			idxPath := workersPath.Index(i)
+			allErrs = append(allErrs, ValidateWorker(worker.Worker, idxPath)...)
+			if workerNames[worker.Name] {
+				allErrs = append(allErrs, field.Duplicate(idxPath, worker.Name))
+			}
+			workerNames[worker.Name] = true
+			workers = append(workers, worker.Worker)
+		}
+		allErrs = append(allErrs, ValidateWorkers(workers, workersPath)...)
+	}
+
 	alicloud := cloud.Alicloud
 	alicloudPath := fldPath.Child("alicloud")
 	if alicloud != nil {
@@ -1454,6 +1510,15 @@ func ValidateShootSpecUpdate(newSpec, oldSpec *garden.ShootSpec, deletionTimesta
 	} else if newSpec.Cloud.OpenStack != nil {
 		allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSpec.Cloud.OpenStack.Networks, oldSpec.Cloud.OpenStack.Networks, openStackPath.Child("networks"))...)
 		allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSpec.Cloud.OpenStack.Zones, oldSpec.Cloud.OpenStack.Zones, openStackPath.Child("zones"))...)
+	}
+
+	metalPath := fldPath.Child("cloud", "metal")
+	if oldSpec.Cloud.Metal != nil && newSpec.Cloud.Metal == nil {
+		allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSpec.Cloud.Metal, oldSpec.Cloud.Metal, metalPath)...)
+		return allErrs
+	} else if newSpec.Cloud.Metal != nil {
+		allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSpec.Cloud.Metal.Networks, oldSpec.Cloud.Metal.Networks, metalPath.Child("networks"))...)
+		allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSpec.Cloud.Metal.Zones, oldSpec.Cloud.Metal.Zones, metalPath.Child("zones"))...)
 	}
 
 	alicloudPath := fldPath.Child("cloud", "alicloud")

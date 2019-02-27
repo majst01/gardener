@@ -34,6 +34,8 @@
     region="europe-1"
   elif cloud == "local":
     region="local"
+  elif cloud == "metal":
+    region="vagrant-lab"
 %>---
 apiVersion: garden.sapcloud.io/v1beta1
 kind: CloudProfile
@@ -512,6 +514,59 @@ spec:<% caBundle=value("spec.caBundle", "") %>
     % else:
   # requestTimeout: 180s # Kubernetes OpenStack Cloudprovider Request Timeout
     % endif
+  % endif
+  % if cloud == "metal":
+  metal:
+    constraints:
+      dnsProviders:<% dnsProviders=value("spec.metal.constraints.dnsProviders", []) %>
+      % if dnsProviders != []:
+      ${yaml.dump(dnsProviders, width=10000)}
+      % else:
+      - name: cloudflare
+      - name: unmanaged
+      % endif
+      kubernetes:
+        versions:<% kubernetesVersions=value("spec.metal.constraints.kubernetes.versions", []) %>
+        % if kubernetesVersions != []:
+        ${yaml.dump(kubernetesVersions, width=10000)}
+        % else:
+        - 1.13.3
+        % endif
+      loadBalancerProviders:<% loadBalancerProviders=value("spec.metal.constraints.loadBalancerProviders", []) %>
+      % if loadBalancerProviders != []:
+      ${yaml.dump(loadBalancerProviders, width=10000)}
+      % else:
+      - name: metallb
+      % endif
+      machineImages:<% machineImages=value("spec.metal.constraints.machineImages", []) %>
+      % if machineImages != []:
+      ${yaml.dump(machineImages, width=10000)}
+      % else:
+      - name: ubuntu
+        image: ubuntu-18.04
+      - name: alpine
+        image: alpine-3.9
+      % endif
+      machineTypes:<% machineTypes=value("spec.metal.constraints.machineTypes", []) %>
+      % if machineTypes != []:
+      ${yaml.dump(machineTypes, width=10000)}
+      % else:
+      - name: t1-small-x86
+        cpu: "1"
+        gpu: "0"
+        memory: 1Gi
+        usable: true
+        volumeType: default
+        volumeSize: 20Gi
+      % endif
+      zones:<% zones=value("spec.metal.constraints.zones", []) %>
+      % if zones != []:
+      ${yaml.dump(zones, width=10000)}
+      % else:
+      - region: vagrant-lab
+        names:
+        - vagrant-lab
+      % endif
   % endif
   % if cloud == "local":
   local:

@@ -102,6 +102,18 @@ func SetDefaults_Shoot(obj *Shoot) {
 		}
 	}
 
+	if cloud.Metal != nil {
+		if cloud.Metal.Networks.Pods == nil {
+			obj.Spec.Cloud.Metal.Networks.Pods = &defaultPodCIDR
+		}
+		if cloud.Metal.Networks.Services == nil {
+			obj.Spec.Cloud.Metal.Networks.Services = &defaultServiceCIDR
+		}
+		if cloud.Metal.Networks.Nodes == nil && len(cloud.Metal.Networks.Workers) > 0 {
+			obj.Spec.Cloud.Metal.Networks.Nodes = &cloud.Metal.Networks.Workers[0]
+		}
+	}
+
 	if cloud.Local != nil {
 		if cloud.Local.Networks.Pods == nil {
 			obj.Spec.Cloud.Local.Networks.Pods = &defaultPodCIDR

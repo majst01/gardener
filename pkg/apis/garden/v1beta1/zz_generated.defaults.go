@@ -72,6 +72,12 @@ func SetObjectDefaults_CloudProfile(in *CloudProfile) {
 			SetDefaults_VolumeType(&a.VolumeType)
 		}
 	}
+	if in.Spec.Metal != nil {
+		for i := range in.Spec.Metal.Constraints.MachineTypes {
+			a := &in.Spec.Metal.Constraints.MachineTypes[i]
+			SetDefaults_MachineType(&a.MachineType)
+		}
+	}
 }
 
 func SetObjectDefaults_CloudProfileList(in *CloudProfileList) {
@@ -137,6 +143,12 @@ func SetObjectDefaults_Shoot(in *Shoot) {
 	if in.Spec.Cloud.OpenStack != nil {
 		for i := range in.Spec.Cloud.OpenStack.Workers {
 			a := &in.Spec.Cloud.OpenStack.Workers[i]
+			SetDefaults_Worker(&a.Worker)
+		}
+	}
+	if in.Spec.Cloud.Metal != nil {
+		for i := range in.Spec.Cloud.Metal.Workers {
+			a := &in.Spec.Cloud.Metal.Workers[i]
 			SetDefaults_Worker(&a.Worker)
 		}
 	}

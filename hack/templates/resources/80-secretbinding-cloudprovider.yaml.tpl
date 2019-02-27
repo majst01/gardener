@@ -6,7 +6,7 @@
     values=yaml.load(open(context.get("values", "")))
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,local} flag")
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,local} flag")
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -32,6 +32,8 @@
     entity="Alicloud project"
   elif cloud == "openstack" or cloud == "os":
     entity="OpenStack tenant"
+  elif cloud == "metal":
+    entity="Metal tenant"
 %># SecretBindings bind a secret from the same or another namespace together with Quotas from the same or other namespaces.
 ---
 apiVersion: garden.sapcloud.io/v1beta1

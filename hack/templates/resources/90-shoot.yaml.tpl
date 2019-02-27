@@ -6,7 +6,7 @@
     values=yaml.load(open(context.get("values", "")))
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,local} flag")
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,local} flag")
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -37,6 +37,9 @@
     kubernetesVersion="1.11.7"
   elif cloud == "openstack" or cloud == "os":
     region="europe-1"
+    kubernetesVersion="1.13.3"
+  elif cloud == "metal":
+    region="vagrant-lab"
     kubernetesVersion="1.13.3"
   elif cloud == "local":
     region="local"
@@ -203,6 +206,31 @@ spec:
       endpoint: ${value("spec.cloud.local.endpoint", "localhost:3777")} # endpoint service pointing to gardener-local-provider
       networks:
         workers: ${value("spec.cloud.local.networks.workers", ["192.168.99.200/25"])}
+    % endif
+    % if cloud == "metal":
+    metal:
+      loadBalancerProvider: ${value("spec.cloud.metal.loadBalancerProvider", "metallb")}
+      networks:<% routerID = value("spec.cloud.metal.networks.router.id", "") %>
+      % if routerID != "":
+        router:
+          id: ${routerID}
+      % else:
+      # router:
+      #   id: 1234
+      % endif
+        workers: ${value("spec.cloud.metal.networks.workers", ["10.250.0.0/19"])}
+      workers:<% workers=value("spec.cloud.metal.workers", []) %>
+      % if workers != []:
+      ${yaml.dump(workers, width=10000)}
+      % else:
+      - name: cpu-worker
+        machineType: t1-small-x86
+        autoScalerMin: 2
+        autoScalerMax: 2
+        maxSurge: 1
+        maxUnavailable: 0
+      % endif
+      zones: ${value("spec.cloud.metal.zones", ["vagrant-lab"])}
     % endif
   kubernetes:
     version: ${value("spec.kubernetes.version", kubernetesVersion)}<% kubeAPIServer=value("spec.kubernetes.kubeAPIServer", {}) %><% cloudControllerManager=value("spec.kubernetes.cloudControllerManager", {}) %><% kubeControllerManager=value("spec.kubernetes.kubeControllerManager", {}) %><% kubeScheduler=value("spec.kubernetes.kubeScheduler", {}) %><% kubeProxy=value("spec.kubernetes.kubeProxy", {}) %><% kubelet=value("spec.kubernetes.kubelet", {}) %>

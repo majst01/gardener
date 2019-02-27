@@ -1,0 +1,37 @@
+---
+apiVersion: garden.sapcloud.io/v1beta1
+kind: CloudProfile
+metadata:
+  name: metal
+spec:
+# caBundle: |
+#   -----BEGIN CERTIFICATE-----
+#   ...
+#   -----END CERTIFICATE-----
+  metal:
+    constraints:
+      dnsProviders:
+      - name: cloudflare
+      - name: unmanaged
+      kubernetes:
+        versions:
+        - 1.13.3
+      loadBalancerProviders:
+      - name: metallb
+      machineImages:
+      - name: ubuntu
+        image: ubuntu-18.04
+      - name: alpine
+        image: alpine-3.9
+      machineTypes:
+      - name: t1-small-x86
+        cpu: "1"
+        gpu: "0"
+        memory: 1Gi
+        usable: true
+        volumeType: default
+        volumeSize: 20Gi
+      zones:
+      - region: vagrant-lab
+        names:
+        - vagrant-lab

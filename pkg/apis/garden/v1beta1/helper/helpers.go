@@ -62,6 +62,10 @@ func DetermineCloudProviderInProfile(spec gardenv1beta1.CloudProfileSpec) (garde
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderAlicloud
 	}
+	if spec.Metal != nil {
+		numClouds++
+		cloud = gardenv1beta1.CloudProviderMetal
+	}
 	if spec.Local != nil {
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderLocal
@@ -139,6 +143,10 @@ func GetShootCloudProviderWorkers(cloudProvider gardenv1beta1.CloudProvider, sho
 		for _, worker := range cloud.OpenStack.Workers {
 			workers = append(workers, worker.Worker)
 		}
+	case gardenv1beta1.CloudProviderMetal:
+		for _, worker := range cloud.Metal.Workers {
+			workers = append(workers, worker.Worker)
+		}
 	case gardenv1beta1.CloudProviderLocal:
 		workers = append(workers, gardenv1beta1.Worker{
 			Name:          "local",
@@ -163,6 +171,8 @@ func GetMachineImageNameFromShoot(cloudProvider gardenv1beta1.CloudProvider, sho
 		return shoot.Spec.Cloud.Alicloud.MachineImage.Name
 	case gardenv1beta1.CloudProviderOpenStack:
 		return shoot.Spec.Cloud.OpenStack.MachineImage.Name
+	case gardenv1beta1.CloudProviderMetal:
+		return shoot.Spec.Cloud.Metal.MachineImage.Name
 	case gardenv1beta1.CloudProviderLocal:
 		return "coreos"
 	}
@@ -195,6 +205,10 @@ func GetMachineTypesFromCloudProfile(cloudProvider gardenv1beta1.CloudProvider, 
 	case gardenv1beta1.CloudProviderOpenStack:
 		for _, openStackMachineType := range profile.Spec.OpenStack.Constraints.MachineTypes {
 			machineTypes = append(machineTypes, openStackMachineType.MachineType)
+		}
+	case gardenv1beta1.CloudProviderMetal:
+		for _, metalMachineType := range profile.Spec.Metal.Constraints.MachineTypes {
+			machineTypes = append(machineTypes, metalMachineType.MachineType)
 		}
 	case gardenv1beta1.CloudProviderLocal:
 		machineTypes = append(machineTypes, gardenv1beta1.MachineType{
@@ -232,6 +246,10 @@ func DetermineCloudProviderInShoot(cloudObj gardenv1beta1.Cloud) (gardenv1beta1.
 	if cloudObj.Alicloud != nil {
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderAlicloud
+	}
+	if cloudObj.Metal != nil {
+		numClouds++
+		cloud = gardenv1beta1.CloudProviderMetal
 	}
 	if cloudObj.Local != nil {
 		numClouds++
@@ -366,6 +384,13 @@ func DetermineMachineImage(cloudProfile gardenv1beta1.CloudProfile, name gardenv
 				return true, &ptr, nil
 			}
 		}
+	case gardenv1beta1.CloudProviderMetal:
+		for _, image := range cloudProfile.Spec.Metal.Constraints.MachineImages {
+			if machineImageToString(image.Name) == currentMachineImageName {
+				ptr := image
+				return true, &ptr, nil
+			}
+		}
 	case gardenv1beta1.CloudProviderAlicloud:
 		for _, image := range cloudProfile.Spec.Alicloud.Constraints.MachineImages {
 			// The OR-case can be removed in a further version of Gardener. We need it to migrate from in-tree OS support
@@ -397,6 +422,9 @@ func UpdateMachineImage(cloudProvider gardenv1beta1.CloudProvider, machineImage 
 	case gardenv1beta1.CloudProviderOpenStack:
 		image := machineImage.(*gardenv1beta1.OpenStackMachineImage)
 		return func(s *gardenv1beta1.Cloud) { s.OpenStack.MachineImage = image }
+	case gardenv1beta1.CloudProviderMetal:
+		image := machineImage.(*gardenv1beta1.MetalMachineImage)
+		return func(s *gardenv1beta1.Cloud) { s.Metal.MachineImage = image }
 	case gardenv1beta1.CloudProviderAlicloud:
 		image := machineImage.(*gardenv1beta1.AlicloudMachineImage)
 		return func(s *gardenv1beta1.Cloud) { s.Alicloud.MachineImage = image }
@@ -438,6 +466,10 @@ func DetermineLatestKubernetesVersion(cloudProfile gardenv1beta1.CloudProfile, c
 		}
 	case gardenv1beta1.CloudProviderOpenStack:
 		for _, version := range cloudProfile.Spec.OpenStack.Constraints.Kubernetes.Versions {
+			versions = append(versions, version)
+		}
+	case gardenv1beta1.CloudProviderMetal:
+		for _, version := range cloudProfile.Spec.Metal.Constraints.Kubernetes.Versions {
 			versions = append(versions, version)
 		}
 	case gardenv1beta1.CloudProviderAlicloud:

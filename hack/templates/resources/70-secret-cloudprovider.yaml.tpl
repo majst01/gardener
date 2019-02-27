@@ -6,7 +6,7 @@
     values=yaml.load(open(context.get("values", "")))
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,local} flag")
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,local} flag")
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -32,6 +32,8 @@
     entity="Alicloud project"
   elif cloud == "openstack" or cloud == "os":
     entity="OpenStack tenant"
+  elif cloud == "metal":
+    entity="Metal tenant"
 %>---<% if entity != "": print("# Secret containing cloud provider credentials for " + entity + " into which Shoot clusters should be provisioned.") %>
 apiVersion: v1
 kind: Secret
@@ -71,6 +73,10 @@ data:
   tenantName: ${value("data.tenantName", "base64(tenant-name)")}
   username: ${value("data.username", "base64(username)")}
   password: ${value("data.password", "base64(password)")}
+  % endif
+  % if cloud == "metal":
+  metalAPIURL: ${value("data.metalAPIURL", "base64(metal-api-url)")}
+  metalAPIKey: ${value("data.metalAPIKey", "base64(metal-api-key)")}
   % endif
   % if cloud == "local":
   % endif
