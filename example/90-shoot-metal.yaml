@@ -84,7 +84,7 @@ spec:
   #   featureGates:
   #     SomeKubernetesFeature: true
   dns:
-    provider: aws-route53
+    provider: unmanaged
     domain: johndoe-metal.garden-dev.example.com
 # hibernation:
 #   enabled: false
