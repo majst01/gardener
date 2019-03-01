@@ -54,6 +54,8 @@ func New(o *operation.Operation, purpose string) (CloudBotanist, error) {
 		return alicloudbotanist.New(o, purpose)
 	case gardenv1beta1.CloudProviderOpenStack:
 		return openstackbotanist.New(o, purpose)
+	case gardenv1beta1.CloudProviderMetal:
+		return metalbotanist.New(o, purpose)
 	case gardenv1beta1.CloudProviderLocal:
 		return localbotanist.New(o)
 	default:
