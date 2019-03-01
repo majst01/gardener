@@ -24,6 +24,7 @@ import (
 	"github.com/gardener/gardener/pkg/operation/cloudbotanist/azurebotanist"
 	"github.com/gardener/gardener/pkg/operation/cloudbotanist/gcpbotanist"
 	"github.com/gardener/gardener/pkg/operation/cloudbotanist/localbotanist"
+	"github.com/gardener/gardener/pkg/operation/cloudbotanist/metalbotanist"
 	"github.com/gardener/gardener/pkg/operation/cloudbotanist/openstackbotanist"
 	"github.com/gardener/gardener/pkg/operation/common"
 )

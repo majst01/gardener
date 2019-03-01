@@ -25,11 +25,6 @@ func (b *MetalBotanist) DeployInfrastructure() error {
 		createRouter = true
 	)
 
-	// check if we should use an existing Router or create a new one
-	if b.Shoot.Info.Spec.Cloud.Metal.Networks.Router != nil {
-		routerID = b.Shoot.Info.Spec.Cloud.Metal.Networks.Router.ID
-		createRouter = false
-	}
 	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
 	if err != nil {
 		return err
@@ -66,7 +61,7 @@ func (b *MetalBotanist) generateTerraformInfraVariablesEnvironment() map[string]
 func (b *MetalBotanist) generateTerraformInfraConfig(createRouter bool, routerID string) map[string]interface{} {
 	return map[string]interface{}{
 		"metal": map[string]interface{}{
-			"metalAPIURL":          b.Shoot.CloudProfile.Spec.Metal.MetalApiURL,
+			"metalAPIURL":          string(b.Shoot.Secret.Data["metal-api-url"]),
 			"domainName":           string(b.Shoot.Secret.Data[DomainName]),
 			"tenantName":           string(b.Shoot.Secret.Data[TenantName]),
 			"region":               b.Shoot.Info.Spec.Cloud.Region,
@@ -125,7 +120,7 @@ func (b *MetalBotanist) generateTerraformBackupVariablesEnvironment() map[string
 func (b *MetalBotanist) generateTerraformBackupConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"metal": map[string]interface{}{
-			"metalAPIURL": b.Shoot.CloudProfile.Spec.Metal.MetalApiURL,
+			"metalAPIURL": string(b.Shoot.Secret.Data["metal-api-url"]),
 			"domainName":  string(b.Shoot.Secret.Data[DomainName]),
 			"tenantName":  string(b.Shoot.Secret.Data[TenantName]),
 			"region":      b.Shoot.Info.Spec.Cloud.Region,

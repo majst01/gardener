@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/gardener/gardener/pkg/operation/common"
-	"github.com/gardener/gardener/pkg/utils"
 )
 
 const cloudProviderConfigTemplate = `
@@ -28,51 +27,20 @@ domain-name=%q
 tenant-name=%q
 username=%q
 password=%q
-[LoadBalancer]
-lb-version=v2
-lb-provider=%q
-floating-network-id=%q
-subnet-id=%q
-create-monitor=true
-monitor-delay=60s
-monitor-timeout=30s
-monitor-max-retries=5
 `
 
 // GenerateCloudProviderConfig generates the Metal cloud provider config.
 // See this for more details:
 // https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/providers/openstack/openstack.go
 func (b *MetalBotanist) GenerateCloudProviderConfig() (string, error) {
-	var (
-		floatingNetworkID = "floating_network_id"
-		subnetID          = "subnet_id"
-	)
-	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
-	if err != nil {
-		return "", err
-	}
-	stateVariables, err := tf.GetStateOutputVariables(floatingNetworkID, subnetID)
-	if err != nil {
-		return "", err
-	}
-
 	cloudProviderConfig := fmt.Sprintf(
 		cloudProviderConfigTemplate,
-		b.Shoot.CloudProfile.Spec.Metal.MetalAPIURL,
+		string(b.Shoot.Secret.Data["metal-api-url"]),
 		string(b.Shoot.Secret.Data[DomainName]),
 		string(b.Shoot.Secret.Data[TenantName]),
 		string(b.Shoot.Secret.Data[UserName]),
 		string(b.Shoot.Secret.Data[Password]),
-		b.Shoot.Info.Spec.Cloud.Metal.LoadBalancerProvider,
-		stateVariables[floatingNetworkID],
-		stateVariables[subnetID],
 	)
-
-	// https://github.com/kubernetes/kubernetes/pull/63903#issue-188306465
-	needsDHCPDomain, err := utils.CheckVersionMeetsConstraint(b.Shoot.Info.Spec.Kubernetes.Version, ">= 1.10.1, < 1.10.3")
-	if err != nil {
-		return "", err
-	}
 
 	return cloudProviderConfig, nil
 }
@@ -162,7 +130,6 @@ func (b *MetalBotanist) GenerateEtcdBackupConfig() (map[string][]byte, map[strin
 		UserName:   b.Seed.Secret.Data[UserName],
 		Password:   b.Seed.Secret.Data[Password],
 		TenantName: b.Seed.Secret.Data[TenantName],
-		AuthURL:    []byte(b.Seed.CloudProfile.Spec.Metal.KeyStoneURL),
 		DomainName: b.Seed.Secret.Data[DomainName],
 	}
 

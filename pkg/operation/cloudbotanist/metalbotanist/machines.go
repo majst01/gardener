@@ -104,12 +104,8 @@ func (b *MetalBotanist) GenerateMachineConfig() ([]map[string]interface{}, opera
 			})
 
 			machineClassSpec["name"] = className
-			machineClassSpec["secret"].(map[string]interface{})["authURL"] = string(secretData[machinev1alpha1.MetalAuthURL])
-			machineClassSpec["secret"].(map[string]interface{})["domainName"] = string(secretData[machinev1alpha1.MetalDomainName])
-			machineClassSpec["secret"].(map[string]interface{})["tenantName"] = string(secretData[machinev1alpha1.MetalTenantName])
-			machineClassSpec["secret"].(map[string]interface{})["username"] = string(secretData[machinev1alpha1.MetalUsername])
-			machineClassSpec["secret"].(map[string]interface{})["password"] = string(secretData[machinev1alpha1.MetalPassword])
-
+			machineClassSpec["secret"].(map[string]interface{})["metal-api-url"] = string(secretData[machinev1alpha1.MetalAPIURL])
+			machineClassSpec["secret"].(map[string]interface{})["metal-api-key"] = string(secretData[machinev1alpha1.MetalAPIKey])
 			machineClasses = append(machineClasses, machineClassSpec)
 		}
 	}

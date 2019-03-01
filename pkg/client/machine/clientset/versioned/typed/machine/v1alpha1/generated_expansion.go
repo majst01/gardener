@@ -34,6 +34,8 @@ type MachineSetExpansion interface{}
 
 type MachineTemplateExpansion interface{}
 
+type MetalMachineClassExpansion interface{}
+
 type OpenStackMachineClassExpansion interface{}
 
 type PacketMachineClassExpansion interface{}
