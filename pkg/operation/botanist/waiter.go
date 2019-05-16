@@ -15,12 +15,13 @@
 package botanist
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -32,19 +33,21 @@ import (
 
 // WaitUntilKubeAPIServerServiceIsReady waits until the external load balancer of the kube-apiserver has
 // been created (i.e., its ingress information has been updated in the service status).
-func (b *Botanist) WaitUntilKubeAPIServerServiceIsReady() error {
+func (b *Botanist) WaitUntilKubeAPIServerServiceIsReady(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
 	var e error
-	if err := wait.Poll(5*time.Second, 600*time.Second, func() (bool, error) {
-		loadBalancerIngress, serviceStatusIngress, err := common.GetLoadBalancerIngress(b.K8sSeedClient, b.Shoot.SeedNamespace, common.KubeAPIServerDeploymentName)
+	if err := wait.PollUntil(5*time.Second, func() (bool, error) {
+		loadBalancerIngress, err := common.GetLoadBalancerIngress(ctx, b.K8sSeedClient.Client(), b.Shoot.SeedNamespace, common.KubeAPIServerDeploymentName)
 		if err != nil {
 			e = err
 			b.Logger.Info("Waiting until the kube-apiserver service is ready...")
 			return false, nil
 		}
 		b.Operation.APIServerAddress = loadBalancerIngress
-		b.Operation.APIServerIngresses = serviceStatusIngress
 		return true, nil
-	}); err != nil {
+	}, ctx.Done()); err != nil {
 		return e
 	}
 	return nil
@@ -83,6 +86,18 @@ func (b *Botanist) WaitUntilEtcdReady() error {
 		b.Logger.Info("Waiting until the both etcd statefulsets are ready...")
 		return false, nil
 	})
+}
+
+// WaitUntilEtcdStatefulsetDeleted waits until the etcd statefulsets get deleted.
+func (b *Botanist) WaitUntilEtcdStatefulsetDeleted(ctx context.Context, role string) error {
+	return wait.PollUntil(5*time.Second, func() (bool, error) {
+		b.Logger.Infof("Waiting until the etcd-%s statefulset get deleted...", role)
+		_, err := b.K8sSeedClient.Kubernetes().AppsV1().StatefulSets(b.Shoot.SeedNamespace).Get(fmt.Sprintf("etcd-%s", role), metav1.GetOptions{})
+		if err != nil && apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}, ctx.Done())
 }
 
 // WaitUntilKubeAPIServerReady waits until the kube-apiserver pod(s) indicate readiness in their statuses.
@@ -132,11 +147,11 @@ func (b *Botanist) WaitUntilBackupInfrastructureReconciled() error {
 			return false, err
 		}
 		if backupInfrastructures.Status.LastOperation != nil {
-			if backupInfrastructures.Status.LastOperation.State == gardenv1beta1.ShootLastOperationStateSucceeded {
+			if backupInfrastructures.Status.LastOperation.State == gardencorev1alpha1.LastOperationStateSucceeded {
 				b.Logger.Info("Backup infrastructure has been successfully reconciled.")
 				return true, nil
 			}
-			if backupInfrastructures.Status.LastOperation.State == gardenv1beta1.ShootLastOperationStateError {
+			if backupInfrastructures.Status.LastOperation.State == gardencorev1alpha1.LastOperationStateError {
 				b.Logger.Info("Backup infrastructure has been reconciled with error.")
 				return true, errors.New(backupInfrastructures.Status.LastError.Description)
 			}
@@ -219,13 +234,13 @@ func (b *Botanist) WaitUntilKubeAddonManagerDeleted() error {
 // been deleted.
 func (b *Botanist) WaitUntilClusterAutoscalerDeleted() error {
 	return wait.PollImmediate(5*time.Second, 600*time.Second, func() (bool, error) {
-		if _, err := b.K8sSeedClient.GetDeployment(b.Shoot.SeedNamespace, common.ClusterAutoscalerDeploymentName); err != nil {
+		if _, err := b.K8sSeedClient.GetDeployment(b.Shoot.SeedNamespace, gardencorev1alpha1.DeploymentNameClusterAutoscaler); err != nil {
 			if apierrors.IsNotFound(err) {
 				return true, nil
 			}
 			return false, err
 		}
-		b.Logger.Infof("Waiting until the %s has been deleted in the Seed cluster...", common.ClusterAutoscalerDeploymentName)
+		b.Logger.Infof("Waiting until the %s has been deleted in the Seed cluster...", gardencorev1alpha1.DeploymentNameClusterAutoscaler)
 		return false, nil
 	})
 }
@@ -334,5 +349,22 @@ func (b *Botanist) WaitForControllersToBeActive() error {
 		}
 
 		return true, false, nil
+	})
+}
+
+// WaitUntilNodesDeleted waits until no nodes exist in the shoot cluster anymore.
+func (b *Botanist) WaitUntilNodesDeleted(ctx context.Context) error {
+	return utils.RetryUntil(ctx, 5*time.Second, func() (bool, bool, error) {
+		nodesList, err := b.K8sShootClient.ListNodes(metav1.ListOptions{})
+		if err != nil {
+			return false, true, err
+		}
+
+		if len(nodesList.Items) == 0 {
+			return true, false, nil
+		}
+
+		b.Logger.Infof("Waiting until all nodes have been deleted in the shoot cluster...")
+		return false, false, nil
 	})
 }

@@ -3,10 +3,10 @@
 
   values={}
   if context.get("values", "") != "":
-    values=yaml.load(open(context.get("values", "")))
+    values=yaml.load(open(context.get("values", "")), Loader=yaml.Loader)
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,local} flag")
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,packet,local} flag")
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -30,6 +30,8 @@
     entity="GCP project"
   elif cloud == "alicloud":
     entity="Alicloud project"
+  elif cloud == "packet":
+    entity="Packet project"
   elif cloud == "openstack" or cloud == "os":
     entity="OpenStack tenant"
   elif cloud == "metal":
@@ -41,10 +43,10 @@ metadata:
   name: ${value("metadata.name", "seed-" + cloud)}
   namespace: ${value("metadata.namespace", "garden")}<% annotations = value("metadata.annotations", {}); labels = value("metadata.labels", {}) %>
   % if annotations != {}:
-  annotations: ${yaml.dump(annotations, width=10000)}
+  annotations: ${yaml.dump(annotations, width=10000, default_flow_style=None)}
   % endif
   % if labels != {}:
-  labels: ${yaml.dump(labels, width=10000)}
+  labels: ${yaml.dump(labels, width=10000, default_flow_style=None)}
   % endif
 type: Opaque
 data:
@@ -64,6 +66,9 @@ data:
   % endif
   % if cloud == "gcp":
   serviceaccount.json: ${value("data.serviceaccountjson", "base64(serviceaccount-json)")}
+  % endif
+  % if cloud == "packet":
+  apiToken: ${value("data.apiToken", "base64(api-token)")}
   % endif
   % if cloud == "openstack" or cloud == "os":
   domainName: ${value("data.domainName", "base64(domain-name)")}

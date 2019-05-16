@@ -21,6 +21,7 @@ import (
 
 	"github.com/gardener/gardener/pkg/utils"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,8 +31,8 @@ import (
 var (
 	decoder = serializer.NewCodecFactory(kubernetes.GardenScheme).UniversalDecoder()
 
-	// GuestBookTemplateDir relative path for guestbook app template dir
-	GuestBookTemplateDir = filepath.Join("..", "..", "resources", "templates")
+	// TemplateDir relative path for helm templates dir
+	TemplateDir = filepath.Join("..", "..", "resources", "templates")
 )
 
 const (
@@ -54,9 +55,7 @@ func CreateShootTestArtifacts(shootTestYamlPath, prefix string) (string, *v1beta
 	}
 
 	shoot.Name = integrationTestName
-	shootToReturnDomain := integrationTestName + ".shoot.dev.k8s-hana.ondemand.com"
-	shoot.Spec.DNS.Domain = &shootToReturnDomain
-
+	shoot.Spec.DNS = v1beta1.DNS{}
 	return integrationTestName, shoot, nil
 }
 
@@ -73,8 +72,18 @@ func generateRandomShootName(prefix string) (string, error) {
 	return IntegrationTestPrefix + strings.ToLower(randomString), nil
 }
 
-// ReadObject loads the contents of file and decodes it as a
-// ControllerManagerConfiguration object.
+// CreatePlantTestArtifacts creates a plant object which is read from the resources directory
+func CreatePlantTestArtifacts(plantTestYamlPath string) (*gardencorev1alpha1.Plant, error) {
+
+	plant := &gardencorev1alpha1.Plant{}
+	if err := ReadObject(plantTestYamlPath, plant); err != nil {
+		return nil, err
+	}
+
+	return plant, nil
+}
+
+// ReadObject loads the contents of file and decodes it as an object.
 func ReadObject(file string, into runtime.Object) error {
 	data, err := ioutil.ReadFile(file)
 	if err != nil {

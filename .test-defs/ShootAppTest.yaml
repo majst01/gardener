@@ -5,16 +5,16 @@ spec:
   owner: DL_5C5BE3E2970B9F404D0E2F50@sap.com # OutputQualification DL
   description: Tests the deployment of a guestbook.
 
-  activeDeadlineSeconds: 600
-  labels: ["default"]
+  activeDeadlineSeconds: 1800
+  labels: ["default", "release"]
 
   command: [bash, -c]
   args:
   - >-
     /tm/setup github.com/gardener gardener &&
     go test $GOPATH/src/github.com/gardener/gardener/test/integration/shoots/applications
-    -ginkgo.v -ginkgo.progress
+    --v -ginkgo.v -ginkgo.progress -ginkgo.noColor
     -kubeconfig=$TM_KUBECONFIG_PATH/gardener.config
     -shootName=$SHOOT_NAME
     -shootNamespace=$PROJECT_NAMESPACE
-  image: eu.gcr.io/gardener-project/gardener/testmachinery/golang:0.28.0
+  image: eu.gcr.io/gardener-project/gardener/testmachinery/golang:0.42.0

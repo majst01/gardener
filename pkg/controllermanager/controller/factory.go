@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"path/filepath"
 
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	gardencoreinformers "github.com/gardener/gardener/pkg/client/core/informers/externalversions"
@@ -26,6 +27,7 @@ import (
 	cloudprofilecontroller "github.com/gardener/gardener/pkg/controllermanager/controller/cloudprofile"
 	controllerinstallationcontroller "github.com/gardener/gardener/pkg/controllermanager/controller/controllerinstallation"
 	controllerregistrationcontroller "github.com/gardener/gardener/pkg/controllermanager/controller/controllerregistration"
+	plantcontroller "github.com/gardener/gardener/pkg/controllermanager/controller/plant"
 	projectcontroller "github.com/gardener/gardener/pkg/controllermanager/controller/project"
 	quotacontroller "github.com/gardener/gardener/pkg/controllermanager/controller/quota"
 	secretbindingcontroller "github.com/gardener/gardener/pkg/controllermanager/controller/secretbinding"
@@ -36,13 +38,26 @@ import (
 	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/operation/garden"
 	"github.com/gardener/gardener/pkg/utils/imagevector"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/version"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 )
+
+// ReadGlobalImageVectorWithEnvOverride reads the global image vector and applies the env override. Exposed for testing.
+func ReadGlobalImageVectorWithEnvOverride() (imagevector.ImageVector, error) {
+	imageVector, err := imagevector.ReadFile(filepath.Join(common.ChartPath, "images.yaml"))
+	if err != nil {
+		return nil, err
+	}
+
+	return imagevector.WithEnvOverride(imageVector)
+}
 
 // GardenControllerFactory contains information relevant to controllers for the Garden API group.
 type GardenControllerFactory struct {
@@ -82,6 +97,7 @@ func (f *GardenControllerFactory) Run(ctx context.Context) {
 		backupInfrastructureInformer   = f.k8sGardenInformers.Garden().V1beta1().BackupInfrastructures().Informer()
 		controllerRegistrationInformer = f.k8sGardenCoreInformers.Core().V1alpha1().ControllerRegistrations().Informer()
 		controllerInstallationInformer = f.k8sGardenCoreInformers.Core().V1alpha1().ControllerInstallations().Informer()
+		plantInformer                  = f.k8sGardenCoreInformers.Core().V1alpha1().Plants().Informer()
 
 		namespaceInformer = f.k8sInformers.Core().V1().Namespaces().Informer()
 		secretInformer    = f.k8sInformers.Core().V1().Secrets().Informer()
@@ -94,7 +110,7 @@ func (f *GardenControllerFactory) Run(ctx context.Context) {
 	}
 
 	f.k8sGardenCoreInformers.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), controllerRegistrationInformer.HasSynced, controllerInstallationInformer.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), controllerRegistrationInformer.HasSynced, controllerInstallationInformer.HasSynced, plantInformer.HasSynced) {
 		panic("Timed out waiting for Garden core caches to sync")
 	}
 
@@ -104,26 +120,20 @@ func (f *GardenControllerFactory) Run(ctx context.Context) {
 	}
 
 	secrets, err := garden.ReadGardenSecrets(f.k8sInformers)
-	if err != nil {
-		panic(err)
-	}
+	runtime.Must(err)
+
 	shootList, err := f.k8sGardenInformers.Garden().V1beta1().Shoots().Lister().List(labels.Everything())
-	if err != nil {
-		panic(err)
-	}
-	if err := garden.VerifyInternalDomainSecret(f.k8sGardenClient, len(shootList), secrets[common.GardenRoleInternalDomain]); err != nil {
-		panic(err)
-	}
+	runtime.Must(err)
 
-	imageVector, err := imagevector.ReadImageVector()
-	if err != nil {
-		panic(err)
-	}
+	runtime.Must(garden.VerifyInternalDomainSecret(f.k8sGardenClient, len(shootList), secrets[common.GardenRoleInternalDomain]))
 
-	if err := garden.BootstrapCluster(f.k8sGardenClient, common.GardenNamespace, secrets); err != nil {
-		logger.Logger.Errorf("Failed to bootstrap the Garden cluster: %s", err.Error())
-		return
-	}
+	imageVector, err := ReadGlobalImageVectorWithEnvOverride()
+	runtime.Must(err)
+
+	gardenNamespace := &corev1.Namespace{}
+	runtime.Must(f.k8sGardenClient.Client().Get(context.TODO(), kutil.Key(common.GardenNamespace), gardenNamespace))
+
+	runtime.Must(garden.BootstrapCluster(f.k8sGardenClient, common.GardenNamespace, secrets))
 	logger.Logger.Info("Successfully bootstrapped the Garden cluster.")
 
 	// Initialize the workqueue metrics collection.
@@ -138,7 +148,8 @@ func (f *GardenControllerFactory) Run(ctx context.Context) {
 		secretBindingController          = secretbindingcontroller.NewSecretBindingController(f.k8sGardenClient, f.k8sGardenInformers, f.k8sInformers, f.recorder)
 		backupInfrastructureController   = backupinfrastructurecontroller.NewBackupInfrastructureController(f.k8sGardenClient, f.k8sGardenInformers, f.cfg, f.identity, f.gardenNamespace, secrets, imageVector, f.recorder)
 		controllerRegistrationController = controllerregistrationcontroller.NewController(f.k8sGardenClient, f.k8sGardenInformers, f.k8sGardenCoreInformers, f.cfg, f.recorder)
-		controllerInstallationController = controllerinstallationcontroller.NewController(f.k8sGardenClient, f.k8sGardenInformers, f.k8sGardenCoreInformers, f.cfg, f.recorder)
+		controllerInstallationController = controllerinstallationcontroller.NewController(f.k8sGardenClient, f.k8sGardenInformers, f.k8sGardenCoreInformers, f.cfg, f.recorder, gardenNamespace)
+		plantController                  = plantcontroller.NewController(f.k8sGardenClient, f.k8sGardenCoreInformers, f.k8sInformers, f.cfg, f.recorder)
 	)
 
 	// Initialize the Controller metrics collection.
@@ -153,6 +164,7 @@ func (f *GardenControllerFactory) Run(ctx context.Context) {
 	go backupInfrastructureController.Run(ctx, f.cfg.Controllers.BackupInfrastructure.ConcurrentSyncs)
 	go controllerRegistrationController.Run(ctx, f.cfg.Controllers.ControllerRegistration.ConcurrentSyncs)
 	go controllerInstallationController.Run(ctx, f.cfg.Controllers.ControllerInstallation.ConcurrentSyncs)
+	go plantController.Run(ctx, f.cfg.Controllers.Plant.ConcurrentSyncs)
 
 	logger.Logger.Infof("Gardener controller manager (version %s) initialized.", version.Get().GitVersion)
 

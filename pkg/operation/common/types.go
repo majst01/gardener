@@ -61,9 +61,6 @@ const (
 	// CloudPurposeSeed is a constant used while instantiating a cloud botanist for the Seed cluster.
 	CloudPurposeSeed = "seed"
 
-	// ClusterAutoscalerDeploymentName is the name of the cluster-autoscaler deployment.
-	ClusterAutoscalerDeploymentName = "cluster-autoscaler"
-
 	// ConfirmationDeletion is an annotation on a Shoot resource whose value must be set to "true" in order to
 	// allow deleting the Shoot (if the annotation is not set any DELETE request will be denied).
 	ConfirmationDeletion = "confirmation.garden.sapcloud.io/deletion"
@@ -72,23 +69,35 @@ const (
 	// manager stores its configuration.
 	ControllerManagerInternalConfigMapName = "gardener-controller-manager-internal-config"
 
+	// DNSProviderDeprecated is the key for an annotation on a Kubernetes Secret object whose value must point to a valid
+	// DNS provider.
+	// deprecated
+	DNSProviderDeprecated = "dns.garden.sapcloud.io/provider"
+
+	// DNSDomainDeprecated is the key for an annotation on a Kubernetes Secret object whose value must point to a valid
+	// domain name.
+	// deprecated
+	DNSDomainDeprecated = "dns.garden.sapcloud.io/domain"
+
 	// DNSProvider is the key for an annotation on a Kubernetes Secret object whose value must point to a valid
 	// DNS provider.
-	DNSProvider = "dns.garden.sapcloud.io/provider"
+	DNSProvider = "dns.gardener.cloud/provider"
 
 	// DNSDomain is the key for an annotation on a Kubernetes Secret object whose value must point to a valid
 	// domain name.
-	DNSDomain = "dns.garden.sapcloud.io/domain"
-
-	// DNSHostedZoneID is the key for an annotation on a Kubernetes Secret object whose value must point to a valid
-	// DNS Hosted Zone.
-	DNSHostedZoneID = "dns.garden.sapcloud.io/hostedZoneID"
+	DNSDomain = "dns.gardener.cloud/domain"
 
 	// EtcdRoleMain is the constant defining the role for main etcd storing data about objects in Shoot.
 	EtcdRoleMain = "main"
 
+	// EtcdMainStatefulSetName is the constant defining the statefulset name for the main etcd.
+	EtcdMainStatefulSetName = "etcd-main"
+
 	// EtcdRoleEvents is the constant defining the role for etcd storing events in Shoot.
 	EtcdRoleEvents = "events"
+
+	// EtcdEventsStatefulSetName is the constant defining the statefulset name for the events etcd.
+	EtcdEventsStatefulSetName = "etcd-events"
 
 	// GardenNamespace is the namespace in which the configuration and secrets for
 	// the Gardener controller manager will be stored (e.g., secrets for the Seed clusters).
@@ -143,6 +152,9 @@ const (
 	// GardenRoleCertificateManagement is the value of GardenRole key indicating type 'certificate-management'.
 	GardenRoleCertificateManagement = "certificate-management"
 
+	// GardenRoleVpa is the value of GardenRole key indicating type 'vpa'.
+	GardenRoleVpa = "vpa"
+
 	// GardenCreatedBy is the key for an annotation of a Shoot cluster whose value indicates contains the username
 	// of the user that created the resource.
 	GardenCreatedBy = "garden.sapcloud.io/createdBy"
@@ -151,8 +163,9 @@ const (
 	// is used to send alerts to.
 	GardenOperatedBy = "garden.sapcloud.io/operatedBy"
 
-	// GardenPurpose is a key for a label describing the purpose of the respective object.
-	GardenPurpose = "garden.sapcloud.io/purpose"
+	// GardenIgnoreAlerts is the key for an annotation of a Shoot cluster whose value indicates
+	// if alerts for this cluster should be ignored
+	GardenIgnoreAlerts = "shoot.garden.sapcloud.io/ignore-alerts"
 
 	// IngressPrefix is the part of a FQDN which will be used to construct the domain name for an ingress controller of
 	// a Shoot cluster. For example, when a Shoot specifies domain 'cluster.example.com', the ingress domain would be
@@ -169,9 +182,6 @@ const (
 
 	// AWSLBReadvertiserDeploymentName is the name for the aws-lb-readvertiser
 	AWSLBReadvertiserDeploymentName = "aws-lb-readvertiser"
-
-	// EnableHPANodeCount is the number of nodes in shoot cluster after which HPA is deployed to autoscale kube-apiserver.
-	EnableHPANodeCount = 5
 
 	// CloudControllerManagerDeploymentName is the name of the cloud-controller-manager deployment.
 	CloudControllerManagerDeploymentName = "cloud-controller-manager"
@@ -289,20 +299,23 @@ const (
 	// TerraformerPurposeInfra is a constant for the complete Terraform setup with purpose 'infrastructure'.
 	TerraformerPurposeInfra = "infra"
 
-	// TerraformerPurposeInternalDNS is a constant for the complete Terraform setup with purpose 'internal cluster domain'
-	TerraformerPurposeInternalDNS = "internal-dns"
+	// TerraformerPurposeInternalDNSDeprecated is a constant for the complete Terraform setup with purpose 'internal cluster domain'
+	// deprecated
+	TerraformerPurposeInternalDNSDeprecated = "internal-dns"
 
-	// TerraformerPurposeExternalDNS is a constant for the complete Terraform setup with purpose 'external cluster domain'.
-	TerraformerPurposeExternalDNS = "external-dns"
+	// TerraformerPurposeExternalDNSDeprecated is a constant for the complete Terraform setup with purpose 'external cluster domain'.
+	// deprecated
+	TerraformerPurposeExternalDNSDeprecated = "external-dns"
+
+	// TerraformerPurposeIngressDNSDeprecated is a constant for the complete Terraform setup with purpose 'ingress domain'.
+	// deprecated
+	TerraformerPurposeIngressDNSDeprecated = "ingress"
 
 	// TerraformerPurposeBackup is a constant for the complete Terraform setup with purpose 'etcd backup'.
 	TerraformerPurposeBackup = "backup"
 
 	// TerraformerPurposeKube2IAM is a constant for the complete Terraform setup with purpose 'kube2iam roles'.
 	TerraformerPurposeKube2IAM = "kube2iam"
-
-	// TerraformerPurposeIngress is a constant for the complete Terraform setup with purpose 'ingress'.
-	TerraformerPurposeIngress = "ingress"
 
 	// ShootExpirationTimestamp is an annotation on a Shoot resource whose value represents the time when the Shoot lifetime
 	// is expired. The lifetime can be extended, but at most by the minimal value of the 'clusterLifetimeDays' property
@@ -321,6 +334,9 @@ const (
 	// Shoot Care controller and can be used to easily identify Shoot clusters with issues.
 	// Deprecated: Use ShootStatus instead
 	ShootUnhealthy = "shoot.garden.sapcloud.io/unhealthy"
+
+	// ShootHibernated is a constant for a label on the Shoot namespace in the Seed indicating the Shoot's hibernation status.
+	ShootHibernated = "shoot.garden.sapcloud.io/hibernated"
 
 	// ShootOperation is a constant for an annotation on a Shoot in a failed state indicating that an operation shall be performed.
 	ShootOperation = "shoot.garden.sapcloud.io/operation"
@@ -456,24 +472,35 @@ const (
 
 	// CSIAttacherImageName is the name of csi attacher - https://github.com/kubernetes-csi/external-attacher
 	CSIAttacherImageName = "csi-attacher"
+	// CSIAttacher is the name of CSI Attacher
+	CSIAttacher = "csi-attacher"
 
-	// CSIDriverRegistrarImageName is the name of driver registrar - https://github.com/kubernetes-csi/driver-registrar
-	CSIDriverRegistrarImageName = "csi-driver-registrar"
+	// CSINodeDriverRegistrarImageName is the name of driver registrar - https://github.com/kubernetes-csi/node-driver-registrar
+	CSINodeDriverRegistrarImageName = "csi-node-driver-registrar"
 
 	// CSIProvisionerImageName is the name of csi provisioner - https://github.com/kubernetes-csi/external-provisioner
 	CSIProvisionerImageName = "csi-provisioner"
+	// CSIProvisioner is the name of CSI Provisioner
+	CSIProvisioner = "csi-provisioner"
+
+	// CSISnapshotterImageName is the name of csi plugin for Alicloud - https://github.com/kubernetes-csi/external-snapshotter
+	CSISnapshotterImageName = "csi-snapshotter"
+	// CSISnapshotter is the name of CSI Snapshotter
+	CSISnapshotter = "csi-snapshotter"
 
 	// CSIPluginAlicloudImageName is the name of csi plugin for Alicloud - https://github.com/AliyunContainerService/csi-plugin
 	CSIPluginAlicloudImageName = "csi-plugin-alicloud"
+	// CSIPluginAlicloud is the name of Alicloud CSI Plugin
+	CSIPluginAlicloud = "csi-disk-plugin-alicloud"
+
+	// CSIPluginController is the name of CSI plugin controller
+	CSIPluginController = "csi-plugin-controller"
 
 	// AWSLBReadvertiserImageName is the name of the AWSLBReadvertiser image.
 	AWSLBReadvertiserImageName = "aws-lb-readvertiser"
 
 	// PauseContainerImageName is the name of the PauseContainer image.
 	PauseContainerImageName = "pause-container"
-
-	// GardenerExternalAdmissionControllerImageName is the name of the GardenerExternalAdmissionController image.
-	GardenerExternalAdmissionControllerImageName = "gardener-external-admission-controller"
 
 	// TerraformerImageName is the name of the Terraformer image.
 	TerraformerImageName = "terraformer"
@@ -508,11 +535,26 @@ const (
 	// CertBrokerResourceName is the name of the Cert-Broker resources.
 	CertBrokerResourceName = "cert-broker"
 
+	// DependancyWatchdogDeploymentName is the name of the dependency controller resources.
+	DependancyWatchdogDeploymentName = "dependency-watchdog"
+
 	// SeedSpecHash is a constant for a label on `ControllerInstallation`s (similar to `pod-template-hash` on `Pod`s).
 	SeedSpecHash = "seed-spec-hash"
 
 	// RegistrationSpecHash is a constant for a label on `ControllerInstallation`s (similar to `pod-template-hash` on `Pod`s).
 	RegistrationSpecHash = "registration-spec-hash"
+
+	// VpaAdmissionControllerImageName is the name of the vpa-admission-controller image
+	VpaAdmissionControllerImageName = "vpa-admission-controller"
+
+	// VpaRecommenderImageName is the name of the vpa-recommender image
+	VpaRecommenderImageName = "vpa-recommender"
+
+	// VpaUpdaterImageName is the name of the vpa-updater image
+	VpaUpdaterImageName = "vpa-updater"
+
+	// VpaExporterImageName is the name of the vpa-exporter image
+	VpaExporterImageName = "vpa-exporter"
 )
 
 var (
@@ -533,6 +575,7 @@ var (
 		KubeControllerManagerDeploymentName,
 		KubeSchedulerDeploymentName,
 		MachineControllerManagerDeploymentName,
+		DependancyWatchdogDeploymentName,
 	)
 
 	// RequiredControlPlaneStatefulSets is a set of the required shoot control plane stateful

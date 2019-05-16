@@ -38,9 +38,14 @@ var (
 	k8sVersion        string
 
 	// optional parameters
-	machineType   string
-	autoScalerMin *int
-	autoScalerMax *int
+	shootArtifactPath string
+	machineType       string
+	autoScalerMin     *int
+	autoScalerMax     *int
+
+	// required for openstack
+	floatingPoolName string
+	loadBalancerProvider string
 
 	testLogger *logrus.Logger
 )
@@ -85,6 +90,10 @@ func init() {
 		testLogger.Fatalf("EnvVar 'K8S_VERSION' needs to be specified")
 	}
 
+	shootArtifactPath = os.Getenv("SHOOT_ARTIFACT_PATH")
+	if shootArtifactPath == "" {
+		shootArtifactPath = fmt.Sprintf("example/90-shoot-%s.yaml", cloudprovider)
+	}
 	machineType = os.Getenv("MACHINE_TYPE")
 	if autoScalerMinEnv := os.Getenv("AUTOSCALER_MIN"); autoScalerMinEnv != "" {
 		autoScalerMinInt, err := strconv.Atoi(autoScalerMinEnv)
@@ -100,9 +109,17 @@ func init() {
 		}
 		autoScalerMax = &autoScalerMaxInt
 	}
+
+	loadBalancerProvider = os.Getenv("LOADBALANCER_PROVIDER")
+	floatingPoolName = os.Getenv("FLOATING_POOL_NAME")
+	if cloudprovider == gardenv1beta1.CloudProviderOpenStack && floatingPoolName == "" {
+		testLogger.Fatalf("EnvVar 'FLOATING_POOL_NAME' needs to be specified when creating a shoot on openstack")
+	}
 }
 
 func main() {
+	ctx := context.Background()
+	defer ctx.Done()
 	gardenerConfigPath := fmt.Sprintf("%s/gardener.config", kubeconfigPath)
 
 	shootGardenerTest, err := framework.NewShootGardenerTest(gardenerConfigPath, nil, testLogger)
@@ -110,7 +127,7 @@ func main() {
 		testLogger.Fatalf("Cannot create ShootGardenerTest %s", err.Error())
 	}
 
-	_, shootObject, err := framework.CreateShootTestArtifacts(fmt.Sprintf("example/90-shoot-%s.yaml", cloudprovider), "")
+	_, shootObject, err := framework.CreateShootTestArtifacts(shootArtifactPath, "")
 	if err != nil {
 		testLogger.Fatalf("Cannot create shoot artifact %s", err.Error())
 	}
@@ -121,24 +138,34 @@ func main() {
 	shootObject.Spec.Cloud.Region = region
 	shootObject.Spec.Cloud.SecretBindingRef.Name = secretBindingName
 	shootObject.Spec.Kubernetes.Version = k8sVersion
+	updateAnnotations(shootObject)
 	updateWorkerZone(shootObject, cloudprovider, zone)
 	updateMachineType(shootObject, cloudprovider, machineType)
 	updateAutoscalerMinMax(shootObject, cloudprovider, autoScalerMin, autoScalerMax)
+	updateFloatingPoolName(shootObject, floatingPoolName, cloudprovider)
+	updateLoadBalancerProvider(shootObject, loadBalancerProvider, cloudprovider)
+
+	// TODO: tests need to be adopted when nginx gets removed.
+	shootObject.Spec.Addons.NginxIngress = &gardenv1beta1.NginxIngress{
+		Addon: gardenv1beta1.Addon{
+			Enabled: true,
+		},
+	}
 
 	testLogger.Infof("Create shoot %s in namespace %s", shootName, projectNamespace)
 	shootGardenerTest.Shoot = shootObject
-	shootObject, err = shootGardenerTest.CreateShoot(context.TODO())
+	shootObject, err = shootGardenerTest.CreateShoot(ctx)
 	if err != nil {
 		testLogger.Fatalf("Cannot create shoot %s: %s", shootName, err.Error())
 	}
 	testLogger.Infof("Successfully created shoot %s", shootName)
 
-	shootTestOperations, err := framework.NewGardenTestOperation(context.TODO(), shootGardenerTest.GardenClient, testLogger, shootObject)
+	shootTestOperations, err := framework.NewGardenTestOperation(ctx, shootGardenerTest.GardenClient, testLogger, shootObject)
 	if err != nil {
 		testLogger.Fatalf("Cannot create shoot %s: %s", shootName, err.Error())
 	}
 
-	err = shootTestOperations.DownloadKubeconfig(context.TODO(), shootTestOperations.SeedClient, shootTestOperations.ShootSeedNamespace(), gardenv1beta1.GardenerName, fmt.Sprintf("%s/shoot.config", kubeconfigPath))
+	err = shootTestOperations.DownloadKubeconfig(ctx, shootTestOperations.SeedClient, shootTestOperations.ShootSeedNamespace(), gardenv1beta1.GardenerName, fmt.Sprintf("%s/shoot.config", kubeconfigPath))
 	if err != nil {
 		testLogger.Fatalf("Cannot download shoot kubeconfig: %s", err.Error())
 	}

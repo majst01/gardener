@@ -71,8 +71,9 @@ const (
 	APIServer             = "kube-apiserver"
 	GuestBookTemplateName = "guestbook-app.yaml.tpl"
 
-	helmDeployNamespace = metav1.NamespaceSystem
+	helmDeployNamespace = metav1.NamespaceDefault
 	RedisChart          = "stable/redis"
+	RedisChartVersion   = "7.0.0"
 )
 
 func validateFlags() {
@@ -103,6 +104,7 @@ var _ = Describe("Shoot application testing", func() {
 	var (
 		shootGardenerTest   *ShootGardenerTest
 		shootTestOperations *GardenerTestOperation
+		cloudProvider       v1beta1.CloudProvider
 		shootAppTestLogger  *logrus.Logger
 		apiserverLabels     labels.Selector
 		guestBooktpl        *template.Template
@@ -142,12 +144,15 @@ var _ = Describe("Shoot application testing", func() {
 			shootTestOperations, err = NewGardenTestOperation(ctx, shootGardenerTest.GardenClient, shootAppTestLogger, shoot)
 			Expect(err).NotTo(HaveOccurred())
 		}
+		var err error
+		cloudProvider, err = shootTestOperations.GetCloudProvider()
+		Expect(err).NotTo(HaveOccurred())
 
 		apiserverLabels = labels.SelectorFromSet(labels.Set(map[string]string{
 			"app":  "kubernetes",
 			"role": "apiserver",
 		}))
-		guestBooktpl = template.Must(template.ParseFiles(filepath.Join(GuestBookTemplateDir, GuestBookTemplateName)))
+		guestBooktpl = template.Must(template.ParseFiles(filepath.Join(TemplateDir, GuestBookTemplateName)))
 	}, InitializationTimeout)
 
 	CAfterSuite(func(ctx context.Context) {
@@ -216,7 +221,7 @@ var _ = Describe("Shoot application testing", func() {
 					},
 				}
 
-				redisSlaveDeploymentToDelete = &appsv1.Deployment{
+				redisSlaveStatefulSetToDelete = &appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: helmDeployNamespace,
 						Name:      RedisSalve,
@@ -233,7 +238,7 @@ var _ = Describe("Shoot application testing", func() {
 			err = deleteResource(ctx, redisSlaveServiceToDelete)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = deleteResource(ctx, redisSlaveDeploymentToDelete)
+			err = deleteResource(ctx, redisSlaveStatefulSetToDelete)
 			Expect(err).NotTo(HaveOccurred())
 		}
 		cleanupGuestbook()
@@ -269,12 +274,22 @@ var _ = Describe("Shoot application testing", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Downloading chart artifacts")
-		err = shootTestOperations.DownloadChartArtifacts(ctx, helm, chartRepo, RedisChart)
+		err = shootTestOperations.DownloadChartArtifacts(ctx, helm, chartRepo, RedisChart, RedisChartVersion)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Applying redis chart")
-		err = shootTestOperations.DeployChart(ctx, helmDeployNamespace, chartRepo, "redis")
-		Expect(err).NotTo(HaveOccurred())
+		if cloudProvider == v1beta1.CloudProviderAlicloud {
+			// AliCloud requires a minimum of 20 GB for its PVCs
+			err = shootTestOperations.DeployChart(ctx, helmDeployNamespace, chartRepo, "redis", map[string]interface{}{"master": map[string]interface{}{
+				"persistence": map[string]interface{}{
+					"size": "20Gi",
+				},
+			}})
+			Expect(err).NotTo(HaveOccurred())
+		} else {
+			err = shootTestOperations.DeployChart(ctx, helmDeployNamespace, chartRepo, "redis", nil)
+			Expect(err).NotTo(HaveOccurred())
+		}
 
 		err = shootTestOperations.WaitUntilStatefulSetIsRunning(ctx, "redis-master", helmDeployNamespace, shootTestOperations.ShootClient)
 		Expect(err).NotTo(HaveOccurred())
@@ -342,8 +357,7 @@ var _ = Describe("Shoot application testing", func() {
 	Context("Network Policy Testing", func() {
 		var (
 			NetworkPolicyTimeout = 1 * time.Minute
-
-			ExecNCOnAPIServer = func(ctx context.Context, host, port string) error {
+			ExecNCOnAPIServer    = func(ctx context.Context, host, port string) error {
 				_, err := shootTestOperations.PodExecByLabel(ctx, apiserverLabels, APIServer,
 					fmt.Sprintf("apt-get update && apt-get -y install netcat && nc -z -w5 %s %s", host, port), shootTestOperations.ShootSeedNamespace(), shootTestOperations.SeedClient)
 
@@ -364,16 +378,8 @@ var _ = Describe("Shoot application testing", func() {
 		)
 
 		ItShouldAllowTrafficTo("seed apiserver/external connection", "kubernetes.default", "443")
-		ItShouldAllowTrafficTo("seed gardener-external-admission-controller", "gardener-external-admission-controller.garden", "443")
 		ItShouldAllowTrafficTo("shoot etcd-main", "etcd-main-client", "2379")
 		ItShouldAllowTrafficTo("shoot etcd-events", "etcd-events-client", "2379")
-
-		ItShouldBlockTrafficTo("cloud metadata service", "169.254.169.254", "80")
-		ItShouldBlockTrafficTo("seed kubernetes dashboard", "kubernetes-dashboard.kube-system", "443")
-		ItShouldBlockTrafficTo("shoot grafana", "grafana", "3000")
-		ItShouldBlockTrafficTo("shoot kube-controller-manager", "kube-controller-manager", "10252")
-		ItShouldBlockTrafficTo("shoot cloud-controller-manager", "cloud-controller-manager", "10253")
-		ItShouldBlockTrafficTo("shoot machine-controller-manager", "machine-controller-manager", "10258")
 
 		CIt("should allow traffic to the shoot pod range", func(ctx context.Context) {
 			dashboardIP, err := shootTestOperations.GetDashboardPodIP(ctx)
@@ -385,6 +391,20 @@ var _ = Describe("Shoot application testing", func() {
 			nodeIP, err := shootTestOperations.GetFirstNodeInternalIP(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ExecNCOnAPIServer(ctx, nodeIP, "10250")).NotTo(HaveOccurred())
+		}, NetworkPolicyTimeout)
+
+		ItShouldBlockTrafficTo("seed kubernetes dashboard", "kubernetes-dashboard.kube-system", "443")
+		ItShouldBlockTrafficTo("shoot grafana", "grafana", "3000")
+		ItShouldBlockTrafficTo("shoot kube-controller-manager", "kube-controller-manager", "10252")
+		ItShouldBlockTrafficTo("shoot cloud-controller-manager", "cloud-controller-manager", "10253")
+		ItShouldBlockTrafficTo("shoot machine-controller-manager", "machine-controller-manager", "10258")
+
+		CIt("should block traffic to the metadataservice", func(ctx context.Context) {
+			if cloudProvider == v1beta1.CloudProviderAlicloud {
+				Expect(ExecNCOnAPIServer(ctx, "100.100.100.200", "80")).To(HaveOccurred())
+			} else {
+				Expect(ExecNCOnAPIServer(ctx, "169.254.169.254", "80")).To(HaveOccurred())
+			}
 		}, NetworkPolicyTimeout)
 	})
 })

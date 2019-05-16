@@ -51,15 +51,19 @@ func (b *AlicloudBotanist) GenerateStorageClassesConfig() (map[string]interface{
 			{
 				"Name":           "default",
 				"IsDefaultClass": true,
-				"Provisioner":    "csi-diskplugin",
+				"Provisioner":    "diskplugin.csi.alibabacloud.com",
 				"Parameters": map[string]interface{}{
-					"regionId": b.Shoot.Info.Spec.Cloud.Region,
-					"zoneId":   b.Shoot.Info.Spec.Cloud.Alicloud.Zones[0],
-					"fsType":   "ext4",
-					"type":     "cloud_ssd",
-					"readOnly": "false",
+					"csi.storage.k8s.io/fstype": "ext4",
+					"type":                      "cloud_ssd",
+					"readOnly":                  "false",
 				},
 			},
 		},
 	}, nil
+
+}
+
+// GenerateVPNShootConfig generate cloud-specific vpn override - nothing unique for alicloud
+func (b *AlicloudBotanist) GenerateVPNShootConfig() (map[string]interface{}, error) {
+	return nil, nil
 }

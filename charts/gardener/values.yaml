@@ -2,6 +2,7 @@ global:
   # Gardener API server configuration values
   apiserver:
     enabled: true
+    serviceEnabled: true
     replicaCount: 1
     serviceAccountName: gardener-apiserver
     image:
@@ -48,6 +49,79 @@ global:
         ...
         -----END RSA PRIVATE KEY-----
     featureGates: {}
+#    admissionControlConfig: |
+#      configuration for the admission plugins. See example/20-admissionconfiguration.yaml
+    audit:
+ #    dynamicConfiguration: false                             Enables dynamic audit configuration. This feature also requires the DynamicAuditing feature flag
+      log:
+ #      batchBufferSize: 10000
+ #      batchMaxSize: 1
+ #      batchMaxWait: 5m
+ #      batchThrottleBurst: 20
+ #      batchThrottleEnable: false
+ #      batchThrottleQPS: 10.0
+ #      format: json
+ #      maxAge: 7
+        maxBackup: 5
+        maxSize: 100
+ #      mode: blocking
+        path: /var/lib/audit.log
+ #      truncateEnabled: true
+ #      truncateMaxBatchSize: 10485760
+ #      truncateMaxEventSize: 102400
+ #      version: audit.k8s.io/v1
+      policy: |
+        apiVersion: audit.k8s.io/v1
+        kind: Policy
+        rules:
+        - level: None
+          userGroups:
+          - system:nodes
+        - level: None
+          users:
+          - gardener
+          - kubelet
+          - system:kube-controller-manager
+          - system:kube-scheduler
+          - system:kube-addon-manager
+          - system:kube-aggregator
+          - system:kube-proxy
+          - system:apiserver
+          - system:serviceaccount:garden:gardener-controller-manager
+          - system:serviceaccount:garden:gardener-metrics-exporter
+          - system:serviceaccount:kube-system:generic-garbage-collector
+          - system:serviceaccount:kube-system:namespace-controller
+          - garden.sapcloud.io:monitoring
+          - garden.sapcloud.io:monitoring:prometheus
+          - garden.sapcloud.io:monitoring:kube-state-metrics
+        - level: None
+          nonResourceURLs:
+          - /healthz*
+          - /version
+          - /openapi/*
+          - /swagger* # Swagger endpoint is deprecated with https://github.com/kubernetes/kubernetes/pull/73148
+        - level: None
+          resources:
+          - group: ""
+            resources: ["events"]
+        - level: None
+          verbs: ["get", "list", "watch"]
+        - level: Metadata
+      webhook: {}
+ #      batchBufferSize: 10000
+ #      batchMaxSize: 400
+ #      batchMaxWait: 30s
+ #      batchThrottleBurst: 15
+ #      batchThrottleEnable: true
+ #      batchThrottleQPS: 10
+ #      config: |
+ #        kubeconfig-formatted file that defines the audit webhook configuration.
+ #      initialBackoff: 10s
+ #      mode: batch
+ #      truncateEnabled: true
+ #      truncateMaxBatchSize: 10485760
+ #      truncateMaxEventSize: 102400
+ #      version: audit.k8s.io/v1
 
   # Gardener controller manager configuration values
   controller:
@@ -66,47 +140,15 @@ global:
         cpu: 750m
         memory: 512Mi
     internalDomain:
-      provider: aws-route53 # aws-route53, google-clouddns, alicloud-dns or openstack-designate
-      hostedZoneID: Z3ABCDE1FGHIJK
+      provider: aws-route53 # depends on the DNS extension of your choice
       domain: example.com
-      credentials:
-        # for aws-route53 we need to provide the following keys:
-        accessKeyID: access-key-id-with-route53-privileges
-        secretAccessKey: secret-access-key-with-route53-privileges
-        #
-        # for google-clouddns we need to provide the following keys:
-        # serviceaccount.json: '{"type": "service_account", "project_id": "...", ...}'
-        #
-        # for alicloud-dns we need to provide the following keys:
-        # accessKeyID: access-key-id-with-aliclouddns-privileges
-        # accessKeySecret: access-key-secret-with-aliclouddns-privileges
-        #
-        # for openstack-designate we need to provide the following keys:
-        # authURL: my-keystone-url
-        # domainName: my-domain
-        # tenantName: my-tenant
-        # userDomainName: my-user-domain
-        # username: my-user-name
-        # password: my-password
+      credentials: {}
+        # actual keys here depend on the DNS extension of your choice
     defaultDomains: []
     # - domain: example.com
-    #   provider: aws-route53 # aws-route53, google-clouddns or openstack-designate
-    #   hostedZoneID: Z3ABCDE1FGHIJK
-    #   credentials:
-    #     # for aws-route53 we need to provide the following keys:
-    #     accessKeyID: access-key-id-with-route53-privileges
-    #     secretAccessKey: secret-access-key-with-route53-privileges
-    #
-    #     # for google-clouddns we need to provide the following keys:
-    #     serviceaccount.json: '{"type": "service_account", "project_id": "...", ...}'
-    #
-    #     # for openstack-designate we need to provide the following keys:
-    #     authURL: my-keystone-url
-    #     domainName: my-domain
-    #     tenantName: my-tenant
-    #     userDomainName: my-user-domain
-    #     username: my-user-name
-    #     password: my-password
+    #   provider: aws-route53 # depends on the DNS extension of your choice
+    #   credentials: {}
+    #     # actual keys here depend on the DNS extension of your choice
     alertingSMTP: []
     # - to: email-address-to-send-alerts-to
     #   from: email-address-to-send-alerts-from
@@ -130,6 +172,9 @@ global:
         qps: 100
         burst: 130
       controllers:
+        plant:
+          concurrentSyncs: 20
+          syncPeriod: 30s
         shoot:
           concurrentSyncs: 20
           syncPeriod: 1h
@@ -162,6 +207,11 @@ global:
         renewDeadline: 10s
         retryPeriod: 2s
         resourceLock: configmaps
+      # `discovery` allows specifying options for the cached discovery client
+      discovery:
+      #  discoveryCacheDir: /tmp/cache-dir
+      #  httpCacheDir: /tmp/http-cache-dir
+      #  ttl: 10s
       logLevel: info
       server:
         http:
@@ -192,3 +242,4 @@ global:
     virtualGarden:
       enabled: false
       clusterIP: 1.2.3.4
+      createNamespace: true

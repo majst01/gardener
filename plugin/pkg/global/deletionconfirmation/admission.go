@@ -108,7 +108,7 @@ func (d *DeletionConfirmation) ValidateInitialization() error {
 }
 
 // Validate makes admissions decisions based on deletion confirmation annotation.
-func (d *DeletionConfirmation) Validate(a admission.Attributes) error {
+func (d *DeletionConfirmation) Validate(a admission.Attributes, o admission.ObjectInterfaces) error {
 	var (
 		obj         metav1.Object
 		listFunc    func() ([]metav1.Object, error)
@@ -212,7 +212,7 @@ func (d *DeletionConfirmation) Validate(a admission.Attributes) error {
 
 			go func(obj metav1.Object) {
 				defer wg.Done()
-				output <- d.Validate(admission.NewAttributesRecord(a.GetObject(), a.GetOldObject(), a.GetKind(), a.GetNamespace(), obj.GetName(), a.GetResource(), a.GetSubresource(), a.GetOperation(), a.IsDryRun(), a.GetUserInfo()))
+				output <- d.Validate(admission.NewAttributesRecord(a.GetObject(), a.GetOldObject(), a.GetKind(), a.GetNamespace(), obj.GetName(), a.GetResource(), a.GetSubresource(), a.GetOperation(), a.IsDryRun(), a.GetUserInfo()), o)
 			}(obj)
 		}
 
@@ -273,7 +273,10 @@ func shootIgnored(obj metav1.Object) bool {
 	if annotations == nil {
 		return false
 	}
-	_, ignore := annotations[common.ShootIgnore]
+	ignore := false
+	if value, ok := annotations[common.ShootIgnore]; ok {
+		ignore, _ = strconv.ParseBool(value)
+	}
 	return ignore
 }
 

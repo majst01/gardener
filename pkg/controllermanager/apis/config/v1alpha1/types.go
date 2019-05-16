@@ -15,10 +15,10 @@
 package v1alpha1
 
 import (
-	// TODO: Should be k8s.io/component-base/config/v1alpha1 in the future.
-	apimachineryconfigv1alpha1 "k8s.io/apimachinery/pkg/apis/config/v1alpha1" // TODO: Should be k8s.io/component-base/config/v1alpha1 in the future.
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiserverconfigv1alpha1 "k8s.io/apiserver/pkg/apis/config/v1alpha1"
+	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
 	"k8s.io/klog"
 )
 
@@ -29,15 +29,13 @@ type ControllerManagerConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 	// ClientConnection specifies the kubeconfig file and client connection
 	// settings for the proxy server to use when communicating with the apiserver.
-	ClientConnection apimachineryconfigv1alpha1.ClientConnectionConfiguration `json:"clientConnection"`
-	// GardenerClientConnection specifies the kubeconfig file and client connection
-	// settings for the garden-apiserver.
-	// +optional
-	GardenerClientConnection *apimachineryconfigv1alpha1.ClientConnectionConfiguration `json:"gardenerClientConnection,omitempty"`
+	ClientConnection componentbaseconfigv1alpha1.ClientConnectionConfiguration `json:"clientConnection"`
 	// Controllers defines the configuration of the controllers.
 	Controllers ControllerManagerControllerConfiguration `json:"controllers"`
 	// LeaderElection defines the configuration of leader election client.
 	LeaderElection LeaderElectionConfiguration `json:"leaderElection"`
+	// Discovery defines the configuration of the discovery client.
+	Discovery DiscoveryConfiguration `json:"discovery"`
 	// LogLevel is the level/severity for the logs. Must be one of [info,debug,error].
 	LogLevel string `json:"logLevel"`
 	// KubernetesLogLevel is the log level used for Kubernetes' k8s.io/klog functions.
@@ -68,6 +66,9 @@ type ControllerManagerControllerConfiguration struct {
 	// ControllerInstallation defines the configuration of the ControllerInstallation controller.
 	// +optional
 	ControllerInstallation *ControllerInstallationControllerConfiguration `json:"controllerInstallation,omitempty"`
+	// Plant defines the configuration of the Plant controller.
+	// +optional
+	Plant *PlantConfiguration `json:"plant,omitempty"`
 	// SecretBinding defines the configuration of the SecretBinding controller.
 	// +optional
 	SecretBinding *SecretBindingControllerConfiguration `json:"secretBinding,omitempty"`
@@ -114,6 +115,16 @@ type ControllerInstallationControllerConfiguration struct {
 	// ConcurrentSyncs is the number of workers used for the controller to work on
 	// events.
 	ConcurrentSyncs int `json:"concurrentSyncs"`
+}
+
+// PlantConfiguration defines the configuration of the
+// PlantConfiguration controller.
+type PlantConfiguration struct {
+	// ConcurrentSyncs is the number of workers used for the controller to work on
+	// events.
+	ConcurrentSyncs int `json:"concurrentSyncs"`
+	// SyncPeriod is the duration how often the existing resources are reconciled.
+	SyncPeriod metav1.Duration `json:"syncPeriod"`
 }
 
 // SecretBindingControllerConfiguration defines the configuration of the
@@ -239,10 +250,26 @@ type BackupInfrastructureControllerConfiguration struct {
 	DeletionGracePeriodDays *int `json:"deletionGracePeriodDays,omitempty"`
 }
 
+// DiscoveryConfiguration defines the configuration of how to discover API groups.
+// It allows to set where to store caching data and to specify the TTL of that data.
+type DiscoveryConfiguration struct {
+	// DiscoveryCacheDir is the directory to store discovery cache information.
+	// If unset, the discovery client will use the current working directory.
+	// +optional
+	DiscoveryCacheDir *string `json:"discoveryCacheDir,omitempty"`
+	// HTTPCacheDir is the directory to store discovery HTTP cache information.
+	// If unset, no HTTP caching will be done.
+	// +optional
+	HTTPCacheDir *string `json:"httpCacheDir,omitempty"`
+	// TTL is the ttl how long discovery cache information shall be valid.
+	// +optional
+	TTL *metav1.Duration `json:"ttl,omitempty"`
+}
+
 // LeaderElectionConfiguration defines the configuration of leader election
 // clients for components that can run with leader election enabled.
 type LeaderElectionConfiguration struct {
-	apiserverconfigv1alpha1.LeaderElectionConfiguration `json:",inline"`
+	componentbaseconfigv1alpha1.LeaderElectionConfiguration `json:",inline"`
 	// LockObjectNamespace defines the namespace of the lock object.
 	LockObjectNamespace string `json:"lockObjectNamespace"`
 	// LockObjectName defines the lock object name.
@@ -300,4 +327,7 @@ const (
 
 	// DefaultETCDBackupSchedule is a constant for the default schedule to take backups of a Shoot cluster (daily).
 	DefaultETCDBackupSchedule = "0 */24 * * *"
+
+	// DefaultDiscoveryTTL is the default ttl for the cached discovery client.
+	DefaultDiscoveryTTL = 10 * time.Second
 )

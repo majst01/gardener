@@ -50,7 +50,7 @@ spec:
         ports:
         - containerPort: {{ .Values.deployment.spec.containers.ports.dns }}
           name: dns-udp
-          protocol:
+          protocol: UDP
         - containerPort: {{ .Values.deployment.spec.containers.ports.dns }}
           name: dns-tcp
           protocol: TCP
@@ -72,6 +72,11 @@ spec:
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
       dnsPolicy: Default
       volumes:
         - name: config-volume

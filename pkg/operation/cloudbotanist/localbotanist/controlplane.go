@@ -51,7 +51,7 @@ func (b *LocalBotanist) GenerateKubeAPIServerExposeConfig() (map[string]interfac
 		return nil, fmt.Errorf("missing `.nip.io` TLD")
 	}
 	return map[string]interface{}{
-		"advertiseAddress": strings.TrimSuffix(*b.Shoot.Info.Spec.DNS.Domain, ".nip.io"),
+		"advertiseAddress": strings.Replace(strings.TrimSuffix(*b.Shoot.Info.Spec.DNS.Domain, ".nip.io"), "-", ".", -1),
 		"securePort":       31443,
 	}, nil
 }
@@ -83,6 +83,16 @@ func (b *LocalBotanist) GenerateKubeControllerManagerConfig() (map[string]interf
 // Deployment manifest of the kube-scheduler properly.
 func (b *LocalBotanist) GenerateKubeSchedulerConfig() (map[string]interface{}, error) {
 	return nil, nil
+}
+
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *LocalBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "25Gi",
+		"provisioner": "k8s.io/minikube-hostpath",
+		"parameters":  map[string]interface{}{},
+	}
 }
 
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.

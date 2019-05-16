@@ -6,6 +6,8 @@ images:
   etcd-backup-restore: image-repository:image-tag
 
 storage: 10Gi
+storageClassName: default
+storageCapacity: 16Gi
 
 backup:
   schedule: "0 */24 * * *" # cron standard schedule
@@ -18,6 +20,9 @@ backup:
 tlsServerSecretName: etcd-server-tls
 tlsClientSecretName: etcd-client-tls
 podAnnotations: {}
+
+vpa:
+  enabled: true
 
 # Aws S3 storage configuration
 # Note: No volumeMounts variable needed

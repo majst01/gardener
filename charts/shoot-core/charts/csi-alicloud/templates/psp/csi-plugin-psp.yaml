@@ -13,13 +13,8 @@ spec:
   - secret
   hostNetwork: true
   allowedHostPaths:
-  - pathPrefix: /var/lib/kubelet/plugins/csi-diskplugin
-  - pathPrefix: /var/lib/kubelet/plugins/kubernetes.io/csi/pv
-  - pathPrefix: /var/lib/kubelet/pods
+  - pathPrefix: /var/lib/kubelet
   - pathPrefix: /dev
-  - pathPrefix: /run/dbus
-  - pathPrefix: /sys
-  - pathPrefix: /lib/modules
   runAsUser:
     rule: RunAsAny
   seLinux:

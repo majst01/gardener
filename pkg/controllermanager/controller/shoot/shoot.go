@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1/helper"
 	gardencoreinformers "github.com/gardener/gardener/pkg/client/core/informers/externalversions"
@@ -37,8 +38,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/robfig/cron"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -66,7 +65,7 @@ type Controller struct {
 	secrets                       map[string]*corev1.Secret
 	imageVector                   imagevector.ImageVector
 	scheduler                     reconcilescheduler.Interface
-	shootToHibernationCron        map[string]*cron.Cron
+	hibernationScheduleRegistry   HibernationScheduleRegistry
 
 	seedLister                   gardenlisters.SeedLister
 	shootLister                  gardenlisters.ShootLister
@@ -142,7 +141,7 @@ func NewShootController(k8sGardenClient kubernetes.Interface, k8sGardenInformers
 		secrets:                       secrets,
 		imageVector:                   imageVector,
 		scheduler:                     reconcilescheduler.New(nil),
-		shootToHibernationCron:        make(map[string]*cron.Cron),
+		hibernationScheduleRegistry:   NewHibernationScheduleRegistry(),
 
 		seedLister:                   seedLister,
 		shootLister:                  shootLister,
@@ -250,9 +249,9 @@ func (c *Controller) Run(ctx context.Context, shootWorkers, shootCareWorkers, sh
 		newShoot := shoot.DeepCopy()
 
 		// Check if the status indicates that an operation is processing and mark it as "aborted".
-		if shoot.Status.LastOperation != nil && shoot.Status.LastOperation.State == gardenv1beta1.ShootLastOperationStateProcessing {
-			newShoot.Status.LastOperation.State = gardenv1beta1.ShootLastOperationStateAborted
-			if _, err := c.k8sGardenClient.Garden().Garden().Shoots(newShoot.Namespace).UpdateStatus(newShoot); err != nil {
+		if shoot.Status.LastOperation != nil && shoot.Status.LastOperation.State == gardencorev1alpha1.LastOperationStateProcessing {
+			newShoot.Status.LastOperation.State = gardencorev1alpha1.LastOperationStateAborted
+			if _, err := c.k8sGardenClient.Garden().GardenV1beta1().Shoots(newShoot.Namespace).UpdateStatus(newShoot); err != nil {
 				panic(fmt.Sprintf("Failed to update shoot status [%v]: %v ", newShoot.Name, err.Error()))
 			}
 		}
@@ -261,7 +260,7 @@ func (c *Controller) Run(ctx context.Context, shootWorkers, shootCareWorkers, sh
 		// they fit with the new extension controllers.
 		// This code can be removed in a further version.
 		//'local' cloud provider doesn't need machine name migration
-		if newShoot.Spec.Cloud.Local != nil {
+		if newShoot.Spec.Cloud.Local != nil || shoot.DeletionTimestamp != nil {
 			continue
 		}
 		utilruntime.Must(errors.Wrapf(c.migrateMachineImageNames(newShoot), "Failed to migrate machine image for shoot %q", shoot.Name))
@@ -351,10 +350,6 @@ func (c *Controller) getShootQueue(obj interface{}) workqueue.RateLimitingInterf
 }
 
 func (c *Controller) migrateMachineImageNames(shoot *gardenv1beta1.Shoot) error {
-	if shoot.DeletionTimestamp != nil {
-		return nil
-	}
-
 	cloudProfile, err := c.k8sGardenInformers.Garden().V1beta1().CloudProfiles().Lister().Get(shoot.Spec.Cloud.Profile)
 	if err != nil {
 		return err
@@ -365,6 +360,11 @@ func (c *Controller) migrateMachineImageNames(shoot *gardenv1beta1.Shoot) error 
 	}
 
 	machineImageName := helper.GetMachineImageNameFromShoot(cloudProvider, shoot)
+	// Only do the migration once
+	if machineImageName == gardenv1beta1.MachineImageCoreOS || machineImageName == gardenv1beta1.MachineImageCoreOSAlicloud {
+		return nil
+	}
+
 	machineImageFound, machineImage, err := helper.DetermineMachineImage(*cloudProfile, machineImageName, shoot.Spec.Cloud.Region)
 	if err != nil {
 		return err

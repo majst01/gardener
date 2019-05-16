@@ -15,12 +15,16 @@
 package utils_test
 
 import (
+	mockutils "github.com/gardener/gardener/pkg/mock/gardener/utils"
 	. "github.com/gardener/gardener/pkg/utils"
+	"github.com/gardener/gardener/test"
+	"github.com/golang/mock/gomock"
 
 	"errors"
 	"time"
 
 	"context"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	errwrap "github.com/pkg/errors"
@@ -31,11 +35,24 @@ var (
 )
 
 var _ = Describe("utils", func() {
+
 	var (
-		canceledCtx, cancel = context.WithCancel(context.Background())
-		zeroDuration        = time.Duration(0)
+		ctrl         *gomock.Controller
+		canceledCtx  context.Context
+		zeroDuration = time.Duration(0)
 	)
-	cancel()
+
+	BeforeEach(func() {
+		ctrl = gomock.NewController(GinkgoT())
+		canceledCtx = func() context.Context {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx
+		}()
+	})
+	AfterEach(func() {
+		ctrl.Finish()
+	})
 
 	Context("#RetryUntil", func() {
 		closedChan := make(chan struct{})
@@ -133,6 +150,57 @@ var _ = Describe("utils", func() {
 			})
 
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("#Sleep", func() {
+		It("should sleep for the given duration", func() {
+			var (
+				duration = 10 * time.Second
+				newTimer = mockutils.NewMockNewTimer(ctrl)
+				timer    = mockutils.NewMockTimer(ctrl)
+				c        = make(chan time.Time, 1)
+			)
+			c <- time.Now()
+			defer close(c)
+
+			defer test.RevertableSet(&NewTimer, newTimer.Do)()
+
+			gomock.InOrder(
+				newTimer.EXPECT().Do(duration).Return(timer),
+				timer.EXPECT().C().Return(c),
+				timer.EXPECT().Stop(),
+			)
+
+			Expect(Sleep(context.Background(), duration)).To(Succeed())
+		})
+
+		It("should return the context's error if duration is 0 but the context is expired", func() {
+			err := Sleep(canceledCtx, 0*time.Second)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(canceledCtx.Err()))
+		})
+
+		It("should error with the context's error if the channel does not fire", func() {
+			var (
+				duration = 10 * time.Second
+				newTimer = mockutils.NewMockNewTimer(ctrl)
+				timer    = mockutils.NewMockTimer(ctrl)
+				c        = make(chan time.Time)
+			)
+			defer close(c)
+
+			defer test.RevertableSet(&NewTimer, newTimer.Do)()
+
+			gomock.InOrder(
+				newTimer.EXPECT().Do(duration).Return(timer),
+				timer.EXPECT().C().Return(c),
+				timer.EXPECT().Stop(),
+			)
+
+			err := Sleep(canceledCtx, duration)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(canceledCtx.Err()))
 		})
 	})
 })

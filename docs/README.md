@@ -7,6 +7,7 @@
 * [Integration Testing](testing/integration_tests.md)
 * [Features, Releases and Hotfixes](development/process.md)
 * [Adding New Cloud Providers](development/new-cloud-provider.md)
+* [Extending the Monitoring Stack](development/monitoring-stack.md)
 
 ## Concepts
 
@@ -17,9 +18,10 @@
 ## Extensions
 
 * [Extensibility overview](extensions/overview.md)
-* [External controller registration](extensions/controllerregistration.md)
+* [Extension controller registration](extensions/controllerregistration.md)
 * Contracts
-  * [OperatingSystemConfig resource](extensions/operatingsystemconfig.md)
+  * [`DNSProvider` and `DNSEntry` resources](extensions/dns.md)
+  * [`OperatingSystemConfig` resource](extensions/operatingsystemconfig.md)
 
 ## Deployment
 

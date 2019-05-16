@@ -19,8 +19,6 @@ import (
 	"path/filepath"
 
 	"github.com/gardener/gardener/pkg/operation/common"
-	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const cloudProviderConfigTemplate = `
@@ -88,31 +86,6 @@ func (b *AWSBotanist) GenerateKubeAPIServerServiceConfig() (map[string]interface
 // GenerateKubeAPIServerExposeConfig defines the cloud provider specific values which configure how the kube-apiserver
 // is exposed to the public.
 func (b *AWSBotanist) GenerateKubeAPIServerExposeConfig() (map[string]interface{}, error) {
-	// For older versions of Gardener the old readvertiser would be deployed which is incompatible with the way we
-	// configure the kube-apiserver now, therefore, we need to check if the version is < 0.4.0.
-	mustDeleteOldReadvertiser := false
-	readvertiserDeployment, err := b.K8sSeedClient.GetDeployment(b.Shoot.SeedNamespace, common.AWSLBReadvertiserDeploymentName)
-	if err == nil {
-		mustDeleteOldReadvertiser = true
-	} else if !apierrors.IsNotFound(err) {
-		return nil, err
-	}
-
-	if mustDeleteOldReadvertiser {
-		validDeploymentVersion, err := kutil.ValidDeploymentContainerImageVersion(readvertiserDeployment, "aws-lb-readvertiser", "0.4.0")
-		if err != nil {
-			return nil, err
-		}
-
-		// If the version is less than the 0.4.0, delete the old readvertiser deployment to prevent modifications of the kube-apiserver deployment.
-		if !validDeploymentVersion {
-			b.Logger.Info("Detected an old version of the aws-lb-readvertiser, deleting it")
-			if err := b.K8sSeedClient.DeleteDeployment(b.Shoot.SeedNamespace, common.AWSLBReadvertiserDeploymentName); err != nil && !apierrors.IsNotFound(err) {
-				return nil, err
-			}
-		}
-	}
-
 	return map[string]interface{}{
 		"endpointReconcilerType": "none",
 	}, nil
@@ -121,7 +94,9 @@ func (b *AWSBotanist) GenerateKubeAPIServerExposeConfig() (map[string]interface{
 // GenerateKubeAPIServerConfig generates the cloud provider specific values which are required to render the
 // Deployment manifest of the kube-apiserver properly.
 func (b *AWSBotanist) GenerateKubeAPIServerConfig() (map[string]interface{}, error) {
-	return nil, nil
+	return map[string]interface{}{
+		"environment": getAWSCredentialsEnvironment(),
+	}, nil
 }
 
 // GenerateCloudControllerManagerConfig generates the cloud provider specific values which are required to
@@ -172,6 +147,18 @@ func getAWSCredentialsEnvironment() []map[string]interface{} {
 					"name": common.CloudProviderSecretName,
 				},
 			},
+		},
+	}
+}
+
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *AWSBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "80Gi",
+		"provisioner": "kubernetes.io/aws-ebs",
+		"parameters": map[string]interface{}{
+			"type": "gp2",
 		},
 	}
 }
@@ -249,10 +236,10 @@ func (b *AWSBotanist) DeployCloudSpecificControlPlane() error {
 		}
 	)
 
-	values, err := b.InjectImages(defaultValues, b.SeedVersion(), b.ShootVersion(), common.AWSLBReadvertiserImageName)
+	values, err := b.InjectSeedShootImages(defaultValues, common.AWSLBReadvertiserImageName)
 	if err != nil {
 		return err
 	}
 
-	return b.ApplyChartSeed(filepath.Join(common.ChartPath, "seed-controlplane", "charts", name), name, b.Shoot.SeedNamespace, nil, values)
+	return b.ApplyChartSeed(filepath.Join(common.ChartPath, "seed-controlplane", "charts", name), b.Shoot.SeedNamespace, name, nil, values)
 }

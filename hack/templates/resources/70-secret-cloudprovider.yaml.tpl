@@ -3,10 +3,14 @@
 
   values={}
   if context.get("values", "") != "":
-    values=yaml.load(open(context.get("values", "")))
+    values=yaml.load(open(context.get("values", "")), Loader=yaml.Loader)
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,local} flag")
+<<<<<<< HEAD
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,packet,local} flag")
+=======
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,packet,local} flag")
+>>>>>>> origin/master
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -30,6 +34,8 @@
     entity="GCP project"
   elif cloud == "alicloud":
     entity="Alicloud project"
+  elif cloud == "packet":
+    entity="Packet project"
   elif cloud == "openstack" or cloud == "os":
     entity="OpenStack tenant"
   elif cloud == "metal":
@@ -41,10 +47,10 @@ metadata:
   name: ${value("metadata.name", "core-" + cloud)}
   namespace: ${value("metadata.namespace", "garden-dev")}<% annotations = value("metadata.annotations", {}); labels = value("metadata.labels", {}) %>
   % if annotations != {}:
-  annotations: ${yaml.dump(annotations, width=10000)}
+  annotations: ${yaml.dump(annotations, width=10000, default_flow_style=None)}
   % endif
   % if labels != {}:
-  labels: ${yaml.dump(labels, width=10000)}
+  labels: ${yaml.dump(labels, width=10000, default_flow_style=None)}
   % else:
   labels:
     cloudprofile.garden.sapcloud.io/name: ${cloud} # label is only meaningful for Gardener dashboard
@@ -63,6 +69,10 @@ data:
   % endif
   % if cloud == "gcp":
   serviceaccount.json: ${value("data.serviceaccountjson", "base64(serviceaccount-json)")}
+  % endif
+  % if cloud == "packet":
+  apiToken: ${value("apiToken", "base64(api-token)")}
+  projectID: ${value("projectID", "base64(project-id)")}
   % endif
   % if cloud == "alicloud":
   accessKeyID: ${value("data.accessKeyID", "base64(access-key-id)")}

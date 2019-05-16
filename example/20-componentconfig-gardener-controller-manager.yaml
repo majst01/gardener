@@ -7,6 +7,9 @@ clientConnection:
   qps: 100
   burst: 130
 controllers:
+  plant:
+    syncPeriod: 10s
+    concurrentSyncs: 5
   shoot:
     concurrentSyncs: 20
     syncPeriod: 1h
@@ -44,6 +47,11 @@ leaderElection:
   renewDeadline: 10s
   retryPeriod: 2s
   resourceLock: configmaps
+# `discovery` allows specifying options for the cached discovery client.
+# discovery:
+#   discoveryCacheDir: /tmp/cache-dir
+#   httpCacheDir: /tmp/http-cache-dir
+#   ttl: 10s
 logLevel: info
 kubernetesLogLevel: 0
 server:
@@ -63,3 +71,4 @@ featureGates:
   # If enabled you require a proper configuration, please see example/10-secret-certificate-management-config.yaml
   # and https://gardener.cloud/050-tutorials/content/howto/gardener_certificate_management/.
   CertificateManagement: false
+  VPA: true

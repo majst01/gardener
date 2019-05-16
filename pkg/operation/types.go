@@ -21,7 +21,6 @@ import (
 
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1/helper"
-	"github.com/gardener/gardener/pkg/chartrenderer"
 	gardeninformers "github.com/gardener/gardener/pkg/client/garden/informers/externalversions/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
@@ -51,10 +50,9 @@ type Operation struct {
 	K8sGardenInformers   gardeninformers.Interface
 	K8sSeedClient        kubernetes.Interface
 	K8sShootClient       kubernetes.Interface
-	ChartGardenRenderer  chartrenderer.ChartRenderer
-	ChartSeedRenderer    chartrenderer.ChartRenderer
-	ChartShootRenderer   chartrenderer.ChartRenderer
-	APIServerIngresses   []corev1.LoadBalancerIngress
+	ChartApplierGarden   kubernetes.ChartApplier
+	ChartApplierSeed     kubernetes.ChartApplier
+	ChartApplierShoot    kubernetes.ChartApplier
 	APIServerAddress     string
 	SeedNamespaceObject  *corev1.Namespace
 	BackupInfrastructure *gardenv1beta1.BackupInfrastructure
@@ -72,6 +70,9 @@ type MachineDeployment struct {
 	Maximum        int
 	MaxSurge       intstr.IntOrString
 	MaxUnavailable intstr.IntOrString
+	Labels         map[string]string
+	Annotations    map[string]string
+	Taints         []corev1.Taint
 }
 
 // MachineDeployments is a list of machine deployments.

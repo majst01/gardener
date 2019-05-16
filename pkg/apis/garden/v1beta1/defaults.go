@@ -15,7 +15,9 @@
 package v1beta1
 
 import (
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	"github.com/gardener/gardener/pkg/utils"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -28,8 +30,9 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 func SetDefaults_Shoot(obj *Shoot) {
 	var (
 		cloud              = obj.Spec.Cloud
-		defaultPodCIDR     = DefaultPodNetworkCIDR
-		defaultServiceCIDR = DefaultServiceNetworkCIDR
+		defaultPodCIDR     = gardencorev1alpha1.DefaultPodNetworkCIDR
+		defaultServiceCIDR = gardencorev1alpha1.DefaultServiceNetworkCIDR
+		defaultProxyMode   = ProxyModeIPTables
 	)
 
 	if cloud.AWS != nil {
@@ -74,11 +77,11 @@ func SetDefaults_Shoot(obj *Shoot) {
 
 	if cloud.Alicloud != nil {
 		if cloud.Alicloud.Networks.Pods == nil {
-			podCIDR := CIDR("100.64.0.0/11")
+			podCIDR := gardencorev1alpha1.CIDR("100.64.0.0/11")
 			obj.Spec.Cloud.Alicloud.Networks.Pods = &podCIDR
 		}
 		if cloud.Alicloud.Networks.Services == nil {
-			svcCIDR := CIDR("100.104.0.0/13")
+			svcCIDR := gardencorev1alpha1.CIDR("100.104.0.0/13")
 			obj.Spec.Cloud.Alicloud.Networks.Services = &svcCIDR
 		}
 		if cloud.Alicloud.Networks.Nodes == nil {
@@ -113,6 +116,14 @@ func SetDefaults_Shoot(obj *Shoot) {
 			obj.Spec.Cloud.Metal.Networks.Nodes = &cloud.Metal.Networks.Workers[0]
 		}
 	}
+	if cloud.Packet != nil {
+		if cloud.Packet.Networks.Pods == nil {
+			obj.Spec.Cloud.Packet.Networks.Pods = &defaultPodCIDR
+		}
+		if cloud.Packet.Networks.Services == nil {
+			obj.Spec.Cloud.Packet.Networks.Services = &defaultServiceCIDR
+		}
+	}
 
 	if cloud.Local != nil {
 		if cloud.Local.Networks.Pods == nil {
@@ -129,6 +140,12 @@ func SetDefaults_Shoot(obj *Shoot) {
 	trueVar := true
 	if obj.Spec.Kubernetes.AllowPrivilegedContainers == nil {
 		obj.Spec.Kubernetes.AllowPrivilegedContainers = &trueVar
+	}
+
+	if obj.Spec.Kubernetes.KubeProxy != nil {
+		if obj.Spec.Kubernetes.KubeProxy.Mode == nil {
+			obj.Spec.Kubernetes.KubeProxy.Mode = &defaultProxyMode
+		}
 	}
 
 	if obj.Spec.Maintenance == nil {
@@ -159,11 +176,6 @@ func SetDefaults_Shoot(obj *Shoot) {
 			}
 		}
 	}
-
-	if obj.Spec.DNS.Provider == DNSUnmanaged && obj.Spec.DNS.Domain == nil {
-		defaultDomain := DefaultDomain
-		obj.Spec.DNS.Domain = &defaultDomain
-	}
 }
 
 // SetDefaults_Seed sets default values for Seed objects.
@@ -192,6 +204,15 @@ func SetDefaults_Project(obj *Project) {
 	}
 }
 
+// SetDefaults_KubernetesDashboard sets default values for KubernetesDashboard objects.
+func SetDefaults_KubernetesDashboard(obj *KubernetesDashboard) {
+	defaultAuthMode := "basic"
+	if obj.AuthenticationMode == nil {
+		obj.AuthenticationMode = &defaultAuthMode
+	}
+}
+
+// SetDefaults_Worker sets default values for Worker objects.
 func SetDefaults_Worker(obj *Worker) {
 	if obj.MaxSurge == nil {
 		obj.MaxSurge = &DefaultWorkerMaxSurge

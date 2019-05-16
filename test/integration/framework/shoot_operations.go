@@ -38,7 +38,7 @@ func NewShootGardenerTest(kubeconfig string, shoot *v1beta1.Shoot, logger *logru
 		return nil, fmt.Errorf("please specify the kubeconfig path correctly")
 	}
 
-	k8sGardenClient, err := kubernetes.NewClientFromFile(kubeconfig, nil, client.Options{
+	k8sGardenClient, err := kubernetes.NewClientFromFile("", kubeconfig, client.Options{
 		Scheme: kubernetes.GardenScheme,
 	})
 	if err != nil {
@@ -170,6 +170,9 @@ func (s *ShootGardenerTest) WaitForShootToBeCreated(ctx context.Context) error {
 			return true, nil
 		}
 		s.Logger.Infof("Waiting for shoot %s to be created", s.Shoot.Name)
+		if shoot.Status.LastOperation != nil {
+			s.Logger.Debugf("%d%%: Shoot State: %s, Description: %s", shoot.Status.LastOperation.Progress, shoot.Status.LastOperation.State, shoot.Status.LastOperation.Description)
+		}
 		return false, nil
 	}, ctx.Done())
 }
@@ -186,7 +189,9 @@ func (s *ShootGardenerTest) WaitForShootToBeDeleted(ctx context.Context) error {
 			return false, err
 		}
 		s.Logger.Infof("waiting for shoot %s to be deleted", s.Shoot.Name)
+		if shoot.Status.LastOperation != nil {
+			s.Logger.Debugf("%d%%: Shoot state: %s, Description: %s", shoot.Status.LastOperation.Progress, shoot.Status.LastOperation.State, shoot.Status.LastOperation.Description)
+		}
 		return false, nil
-
 	}, ctx.Done())
 }

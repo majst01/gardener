@@ -11,21 +11,21 @@ spec:
   openstack:
     constraints:
       dnsProviders:
-      - name: aws-route53
       - name: unmanaged
       floatingPools:
       - name: MY-FLOATING-POOL
       kubernetes:
         versions:
-        - 1.13.3
-        - 1.12.5
-        - 1.11.7
+        - 1.14.0
+        - 1.13.6
+        - 1.12.8
+        - 1.11.10
         - 1.10.13
       loadBalancerProviders:
       - name: haproxy
       machineImages:
       - name: coreos
-        image: coreos-1911.5.0
+        image: coreos-2023.5.0
       machineTypes:
       - name: medium_2_4
         cpu: "2"

@@ -17,6 +17,8 @@ package terraformer
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	corev1 "k8s.io/api/core/v1"
@@ -196,9 +198,9 @@ func (t *Terraformer) ConfigExists() (bool, error) {
 	return numberOfExistingResources == numberOfConfigResources, err
 }
 
-// cleanupConfiguration deletes the two ConfigMaps which store the Terraform configuration and state. It also deletes
+// CleanupConfiguration deletes the two ConfigMaps which store the Terraform configuration and state. It also deletes
 // the Secret which stores the Terraform variables.
-func (t *Terraformer) cleanupConfiguration(ctx context.Context) error {
+func (t *Terraformer) CleanupConfiguration(ctx context.Context) error {
 	t.logger.Debugf("Deleting Terraform variables Secret '%s'", t.variablesName)
 	if err := t.client.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: t.namespace, Name: t.variablesName}}); err != nil && !apierrors.IsNotFound(err) {
 		return err
@@ -228,4 +230,15 @@ func (t *Terraformer) ensureCleanedUp() error {
 		return err
 	}
 	return t.waitForCleanEnvironment(ctx)
+}
+
+// GenerateVariablesEnvironment takes a <secret> and a <keyValueMap> and builds an environment which
+// can be injected into the Terraformer job/pod manifest. The keys of the <keyValueMap> will be prefixed with
+// 'TF_VAR_' and the value will be used to extract the respective data from the <secret>.
+func GenerateVariablesEnvironment(secret *corev1.Secret, keyValueMap map[string]string) map[string]string {
+	out := make(map[string]string, len(keyValueMap))
+	for key, value := range keyValueMap {
+		out[fmt.Sprintf("TF_VAR_%s", key)] = strings.TrimSpace(string(secret.Data[value]))
+	}
+	return out
 }

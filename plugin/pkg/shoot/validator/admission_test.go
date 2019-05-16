@@ -15,18 +15,22 @@
 package validator_test
 
 import (
+	"fmt"
 	"time"
 
+	gardencore "github.com/gardener/gardener/pkg/apis/core"
 	"github.com/gardener/gardener/pkg/apis/garden"
 	gardeninformers "github.com/gardener/gardener/pkg/client/garden/informers/internalversion"
 	. "github.com/gardener/gardener/plugin/pkg/shoot/validator"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/admission"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("validator", func() {
@@ -39,10 +43,10 @@ var _ = Describe("validator", func() {
 			project               garden.Project
 			shoot                 garden.Shoot
 
-			podCIDR     = garden.CIDR("100.96.0.0/11")
-			serviceCIDR = garden.CIDR("100.64.0.0/13")
-			nodesCIDR   = garden.CIDR("10.250.0.0/16")
-			k8sNetworks = garden.K8SNetworks{
+			podCIDR     = gardencore.CIDR("100.96.0.0/11")
+			serviceCIDR = gardencore.CIDR("100.64.0.0/13")
+			nodesCIDR   = gardencore.CIDR("10.250.0.0/16")
+			k8sNetworks = gardencore.K8SNetworks{
 				Pods:     &podCIDR,
 				Services: &serviceCIDR,
 				Nodes:    &nodesCIDR,
@@ -52,9 +56,12 @@ var _ = Describe("validator", func() {
 			namespaceName = "garden-my-project"
 			projectName   = "my-project"
 
-			seedPodsCIDR     = garden.CIDR("10.241.128.0/17")
-			seedServicesCIDR = garden.CIDR("10.241.0.0/17")
-			seedNodesCIDR    = garden.CIDR("10.240.0.0/16")
+			unmanagedDNSProvider = garden.DNSUnmanaged
+			baseDomain           = "example.com"
+
+			seedPodsCIDR     = gardencore.CIDR("10.241.128.0/17")
+			seedServicesCIDR = gardencore.CIDR("10.241.0.0/17")
+			seedNodesCIDR    = gardencore.CIDR("10.240.0.0/16")
 
 			projectBase = garden.Project{
 				ObjectMeta: metav1.ObjectMeta{
@@ -97,8 +104,8 @@ var _ = Describe("validator", func() {
 						},
 					},
 					DNS: garden.DNS{
-						Provider: garden.DNSUnmanaged,
-						Domain:   makeStrPointer("shoot.example.com"),
+						Provider: &unmanagedDNSProvider,
+						Domain:   makeStrPointer(fmt.Sprintf("shoot.%s", baseDomain)),
 					},
 					Kubernetes: garden.Kubernetes{
 						Version: "1.6.4",
@@ -123,11 +130,13 @@ var _ = Describe("validator", func() {
 			cloudProfile.Spec.AWS = nil
 			cloudProfile.Spec.Azure = nil
 			cloudProfile.Spec.GCP = nil
+			cloudProfile.Spec.Packet = nil
 			cloudProfile.Spec.OpenStack = nil
 
 			shoot.Spec.Cloud.AWS = nil
 			shoot.Spec.Cloud.Azure = nil
 			shoot.Spec.Cloud.GCP = nil
+			shoot.Spec.Cloud.Packet = nil
 			shoot.Spec.Cloud.OpenStack = nil
 		})
 
@@ -143,7 +152,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -159,7 +168,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -181,7 +190,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -204,12 +213,12 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Update, false, nil)
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).NotTo(ContainSubstring("name must not exceed"))
 
 				attrs = admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Delete, false, nil)
-				err = admissionHandler.Admit(attrs)
+				err = admissionHandler.Admit(attrs, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).NotTo(ContainSubstring("name must not exceed"))
 			})
@@ -218,7 +227,7 @@ var _ = Describe("validator", func() {
 		It("should reject because the referenced cloud profile was not found", func() {
 			attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-			err := admissionHandler.Admit(attrs)
+			err := admissionHandler.Admit(attrs, nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -229,7 +238,7 @@ var _ = Describe("validator", func() {
 			gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 			attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-			err := admissionHandler.Admit(attrs)
+			err := admissionHandler.Admit(attrs, nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -240,7 +249,7 @@ var _ = Describe("validator", func() {
 			gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 			attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-			err := admissionHandler.Admit(attrs)
+			err := admissionHandler.Admit(attrs, nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -255,7 +264,7 @@ var _ = Describe("validator", func() {
 			gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 			attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-			err := admissionHandler.Admit(attrs)
+			err := admissionHandler.Admit(attrs, nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(apierrors.IsBadRequest(err)).To(BeTrue())
@@ -357,7 +366,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -371,7 +380,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -385,21 +394,22 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
 			It("should reject due to an invalid dns provider", func() {
-				shoot.Spec.DNS.Provider = garden.DNSAWSRoute53
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
 				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -416,10 +426,88 @@ var _ = Describe("validator", func() {
 
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject because the specified domain is a subdomain of a domain already used by another shoot", func() {
+				anotherShoot := shoot.DeepCopy()
+				anotherShoot.Name = "another-shoot"
+
+				subdomain := fmt.Sprintf("subdomain.%s", *anotherShoot.Spec.DNS.Domain)
+				shoot.Spec.DNS.Domain = &subdomain
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				gardenInformerFactory.Garden().InternalVersion().Shoots().Informer().GetStore().Add(anotherShoot)
+
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject because the specified domain is a subdomain of a domain already used by another shoot (case one)", func() {
+				anotherShoot := shoot.DeepCopy()
+				anotherShoot.Name = "another-shoot"
+
+				subdomain := fmt.Sprintf("subdomain.%s", *anotherShoot.Spec.DNS.Domain)
+				shoot.Spec.DNS.Domain = &subdomain
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				gardenInformerFactory.Garden().InternalVersion().Shoots().Informer().GetStore().Add(anotherShoot)
+
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject because the specified domain is a subdomain of a domain already used by another shoot (case two)", func() {
+				anotherShoot := shoot.DeepCopy()
+				anotherShoot.Name = "another-shoot"
+
+				shoot.Spec.DNS.Domain = &baseDomain
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				gardenInformerFactory.Garden().InternalVersion().Shoots().Informer().GetStore().Add(anotherShoot)
+
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should allow because the specified domain is not a subdomain of a domain already used by another shoot", func() {
+				anotherShoot := shoot.DeepCopy()
+				anotherShoot.Name = "another-shoot"
+
+				anotherDomain := fmt.Sprintf("someprefix%s", *anotherShoot.Spec.DNS.Domain)
+				shoot.Spec.DNS.Domain = &anotherDomain
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				gardenInformerFactory.Garden().InternalVersion().Shoots().Informer().GetStore().Add(anotherShoot)
+
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(BeNil())
 			})
 
 			It("should reject due to an invalid kubernetes version", func() {
@@ -430,7 +518,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -447,7 +535,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -467,7 +555,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -486,7 +574,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -506,7 +594,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -527,7 +615,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -541,7 +629,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -556,7 +644,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -652,7 +740,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -666,7 +754,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -680,21 +768,22 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
 			It("should reject due to an invalid dns provider", func() {
-				shoot.Spec.DNS.Provider = garden.DNSAWSRoute53
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
 				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -708,7 +797,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -728,7 +817,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -748,7 +837,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -769,7 +858,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -783,7 +872,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -797,7 +886,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -882,7 +971,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -896,7 +985,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -910,21 +999,22 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
 			It("should reject due to an invalid dns provider", func() {
-				shoot.Spec.DNS.Provider = garden.DNSAWSRoute53
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
 				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -938,7 +1028,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -955,7 +1045,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -975,7 +1065,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -996,7 +1086,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1010,7 +1100,207 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+		})
+
+		Context("tests for Packet cloud", func() {
+			var (
+				packetProfile = &garden.PacketProfile{
+					Constraints: garden.PacketConstraints{
+						DNSProviders: []garden.DNSProviderConstraint{
+							{
+								Name: garden.DNSUnmanaged,
+							},
+						},
+						Kubernetes: garden.KubernetesConstraints{
+							Versions: []string{"1.6.4"},
+						},
+						MachineImages: []garden.PacketMachineImage{
+							{
+								Name: garden.MachineImageName("some-machineimage"),
+								ID:   "core-1.2.3",
+							},
+						},
+						MachineTypes: []garden.MachineType{
+							{
+								Name:   "machine-type-1",
+								CPU:    resource.MustParse("2"),
+								GPU:    resource.MustParse("0"),
+								Memory: resource.MustParse("100Gi"),
+							},
+						},
+						VolumeTypes: []garden.VolumeType{
+							{
+								Name:  "volume-type-1",
+								Class: "super-premium",
+							},
+						},
+						Zones: []garden.Zone{
+							{
+								Region: "europe",
+								Names:  []string{"europe-a"},
+							},
+							{
+								Region: "asia",
+								Names:  []string{"asia-a"},
+							},
+						},
+					},
+				}
+				workers = []garden.PacketWorker{
+					{
+						Worker: garden.Worker{
+							Name:          "worker-name",
+							MachineType:   "machine-type-1",
+							AutoScalerMin: 1,
+							AutoScalerMax: 1,
+						},
+						VolumeSize: "10Gi",
+						VolumeType: "volume-type-1",
+					},
+				}
+				zones       = []string{"europe-a"}
+				packetCloud = &garden.PacketCloud{}
+			)
+
+			BeforeEach(func() {
+				cloudProfile = cloudProfileBase
+				shoot = shootBase
+				packetCloud.Networks = garden.PacketNetworks{K8SNetworks: k8sNetworks}
+				packetCloud.Workers = workers
+				packetCloud.Zones = zones
+				cloudProfile.Spec.Packet = packetProfile
+				shoot.Spec.Cloud.Packet = packetCloud
+			})
+
+			It("should reject because the shoot pod and the seed pod networks intersect", func() {
+				shoot.Spec.Cloud.Packet.Networks.Pods = &seedPodsCIDR
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject because the shoot service and the seed service networks intersect", func() {
+				shoot.Spec.Cloud.Packet.Networks.Services = &seedServicesCIDR
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid dns provider", func() {
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid kubernetes version", func() {
+				shoot.Spec.Kubernetes.Version = "1.2.3"
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid machine image", func() {
+				shoot.Spec.Cloud.Packet.MachineImage = &garden.PacketMachineImage{
+					Name: garden.MachineImageName("not-supported"),
+					ID:   "not-supported",
+				}
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid machine type", func() {
+				shoot.Spec.Cloud.Packet.Workers = []garden.PacketWorker{
+					{
+						Worker: garden.Worker{
+							MachineType: "not-allowed",
+						},
+					},
+				}
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid volume type", func() {
+				shoot.Spec.Cloud.Packet.Workers = []garden.PacketWorker{
+					{
+						Worker: garden.Worker{
+							MachineType: "machine-type-1",
+						},
+						VolumeType: "not-allowed",
+					},
+				}
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
+
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+			})
+
+			It("should reject due to an invalid zone", func() {
+				shoot.Spec.Cloud.Packet.Zones = []string{"invalid-zone"}
+
+				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
+				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
+				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
+				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
+
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1103,7 +1393,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1117,7 +1407,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1131,27 +1421,28 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
 			It("should reject due to an invalid dns provider", func() {
-				shoot.Spec.DNS.Provider = garden.DNSAWSRoute53
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
 				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
-			It("should reject due to an undefined dns domain", func() {
+			It("should not reject due to an undefined dns domain", func() {
 				shoot.Spec.DNS.Domain = nil
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
@@ -1159,10 +1450,9 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
-				Expect(err).To(HaveOccurred())
-				Expect(apierrors.IsForbidden(err)).To(BeTrue())
+				Expect(err).To(Succeed())
 			})
 
 			It("should reject due to an invalid floating pool name", func() {
@@ -1173,7 +1463,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1187,7 +1477,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1201,7 +1491,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1218,7 +1508,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1238,7 +1528,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1252,7 +1542,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1347,7 +1637,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1361,7 +1651,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1375,21 +1665,22 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
 			})
 
 			It("should reject due to an invalid dns provider", func() {
-				shoot.Spec.DNS.Provider = garden.DNSAWSRoute53
+				provider := "some-provider"
+				shoot.Spec.DNS.Provider = &provider
 
 				gardenInformerFactory.Garden().InternalVersion().Projects().Informer().GetStore().Add(&project)
 				gardenInformerFactory.Garden().InternalVersion().CloudProfiles().Informer().GetStore().Add(&cloudProfile)
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1403,7 +1694,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1420,7 +1711,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1440,7 +1731,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1461,7 +1752,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1475,7 +1766,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1497,7 +1788,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -1517,7 +1808,7 @@ var _ = Describe("validator", func() {
 				gardenInformerFactory.Garden().InternalVersion().Seeds().Informer().GetStore().Add(&seed)
 				attrs := admission.NewAttributesRecord(&shoot, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Create, false, nil)
 
-				err := admissionHandler.Admit(attrs)
+				err := admissionHandler.Admit(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(apierrors.IsForbidden(err)).To(BeTrue())

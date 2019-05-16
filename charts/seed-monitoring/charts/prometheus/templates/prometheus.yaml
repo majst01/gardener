@@ -61,6 +61,15 @@ spec:
     spec:
       # used to talk to Seed's API server.
       serviceAccountName: prometheus
+      initContainers:
+      - name: set-iptable-rules
+        image: {{ index .Values.images "alpine" }}
+        command: ['/bin/sh', '-c', 'apk update && apk add iptables && iptables -A INPUT -i tun0 -p icmp -j ACCEPT && iptables -A INPUT -i tun0 -m state --state NEW -j DROP']
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          privileged: true
       containers:
       - name: prometheus
         image: {{ index .Values.images "prometheus" }}
@@ -98,7 +107,13 @@ spec:
           successThreshold: 1
           timeoutSeconds: 3
         resources:
-{{- include "util-templates.resource-quantity" .Values | indent 10 }}
+{{- if .Values.vpa.enabled }}
+          requests:
+            cpu: 30m
+            memory: 500Mi
+{{- else }}
+{{- include "util-templates.resource-quantity" .Values | indent 10 -}}
+{{ end }}
         volumeMounts:
         - mountPath: /srv/kubernetes/prometheus-kubelet
           name: prometheus-kubelet
@@ -153,6 +168,7 @@ spec:
         image: {{ index .Values.images "blackbox-exporter" }}
         args:
         - --config.file=/vpn/blackbox.yaml
+        - --web.listen-address=127.0.0.1:9115
         ports:
         # port name must be max 15 characters long
         - name: blackbox-export

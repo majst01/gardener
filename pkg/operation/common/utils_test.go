@@ -15,64 +15,46 @@
 package common_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
+	mockclient "github.com/gardener/gardener/pkg/mock/controller-runtime/client"
 	. "github.com/gardener/gardener/pkg/operation/common"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/golang/mock/gomock"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-
-	"errors"
-
-	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/gomega"
+	gomegatypes "github.com/onsi/gomega/types"
 )
 
 var _ = Describe("common", func() {
+	var (
+		ctrl *gomock.Controller
+		c    *mockclient.MockClient
+	)
+
+	BeforeEach(func() {
+		ctrl = gomock.NewController(GinkgoT())
+		c = mockclient.NewMockClient(ctrl)
+	})
+
+	AfterEach(func() {
+		ctrl.Finish()
+	})
+
 	Describe("utils", func() {
-		Describe("#DetermineError", func() {
-			DescribeTable("appropriate error should be determined",
-				func(msg string, expectedErr error) {
-					err := DetermineError(msg)
-					Expect(err).To(Equal(expectedErr))
-				},
-				Entry("no code to extract", "foo", errors.New("foo")),
-				Entry("unauthorized", "unauthorized",
-					NewErrorWithCode(gardenv1beta1.ErrorInfraUnauthorized, "unauthorized")),
-				Entry("quota exceeded", "limitexceeded",
-					NewErrorWithCode(gardenv1beta1.ErrorInfraQuotaExceeded, "limitexceeded")),
-				Entry("insufficient privileges", "accessdenied",
-					NewErrorWithCode(gardenv1beta1.ErrorInfraInsufficientPrivileges, "accessdenied")),
-				Entry("infrastructure dependencies", "pendingverification",
-					NewErrorWithCode(gardenv1beta1.ErrorInfraDependencies, "pendingverification")),
-			)
-		})
-
-		Describe("#IdentifyAddressType", func() {
-			It("should return a tuple with first value equals hostname", func() {
-				address := "example.com"
-
-				addrType, addr := IdentifyAddressType(address)
-
-				Expect(addrType).To(Equal("hostname"))
-				Expect(addr).To(BeNil())
-			})
-
-			It("should return a tuple with first value equals ip", func() {
-				address := "127.0.0.1"
-
-				addrType, addr := IdentifyAddressType(address)
-
-				Expect(addrType).To(Equal("ip"))
-				Expect(addr).NotTo(BeNil())
-			})
-		})
-
 		Describe("#DistributePercentOverZones", func() {
-			It("should return unmodified percentage if total is evenly divisble", func() {
+			It("should return unmodified percentage if total is evenly dividable", func() {
 				var (
 					total      = 6
 					noOfZones  = 3
@@ -86,7 +68,7 @@ var _ = Describe("common", func() {
 				Expect(percentages).To(Equal([]string{percentage, percentage, percentage}))
 			})
 
-			It("should return correct percentage if total is not evenly divisble", func() {
+			It("should return correct percentage if total is not evenly dividable", func() {
 				var (
 					total      = 7
 					noOfZones  = 3
@@ -105,7 +87,7 @@ var _ = Describe("common", func() {
 			It("should return a cluster IP as string", func() {
 				var (
 					ip   = "100.64.0.0"
-					cidr = gardenv1beta1.CIDR(ip + "/13")
+					cidr = gardencorev1alpha1.CIDR(ip + "/13")
 				)
 
 				result := ComputeClusterIP(cidr, 10)
@@ -242,16 +224,6 @@ var _ = Describe("common", func() {
 		})
 	})
 
-	DescribeTable("#HasInitializer",
-		func(initializers *metav1.Initializers, name string, expected bool) {
-			Expect(HasInitializer(initializers, name)).To(Equal(expected))
-		},
-
-		Entry("nil initializers", nil, "foo", false),
-		Entry("no matching initializer", &metav1.Initializers{Pending: []metav1.Initializer{{Name: "bar"}}}, "foo", false),
-		Entry("matching initializer", &metav1.Initializers{Pending: []metav1.Initializer{{Name: "foo"}}}, "foo", true),
-	)
-
 	DescribeTable("#ReplaceCloudProviderConfigKey",
 		func(key, oldValue, newValue string) {
 			var (
@@ -271,4 +243,145 @@ var _ = Describe("common", func() {
 		Entry("with special characters", "foo", `C*ko4P++$"x`, `"$++*ab*$c4k`),
 		Entry("with special characters", "foo", "P+*4", `P*$8uOkv6+4`),
 	)
+
+	Describe("#GetLoadBalancerIngress", func() {
+		var (
+			namespace = "foo"
+			name      = "bar"
+			key       = kutil.Key(namespace, name)
+		)
+
+		It("should return an unexpected client error", func() {
+			ctx := context.TODO()
+			expectedErr := fmt.Errorf("unexpected")
+
+			c.EXPECT().Get(ctx, key, gomock.AssignableToTypeOf(&corev1.Service{})).Return(expectedErr)
+
+			_, err := GetLoadBalancerIngress(ctx, c, namespace, name)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeIdenticalTo(expectedErr))
+		})
+
+		It("should return an error because no ingresses found", func() {
+			ctx := context.TODO()
+
+			c.EXPECT().Get(ctx, key, gomock.AssignableToTypeOf(&corev1.Service{}))
+
+			_, err := GetLoadBalancerIngress(ctx, c, namespace, name)
+
+			Expect(err).To(MatchError("`.status.loadBalancer.ingress[]` has no elements yet, i.e. external load balancer has not been created (is your quota limit exceeded/reached?)"))
+		})
+
+		It("should return an ip address", func() {
+			var (
+				ctx        = context.TODO()
+				expectedIP = "1.2.3.4"
+			)
+
+			c.EXPECT().Get(ctx, key, gomock.AssignableToTypeOf(&corev1.Service{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, service *corev1.Service) error {
+				service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: expectedIP}}
+				return nil
+			})
+
+			ingress, err := GetLoadBalancerIngress(ctx, c, namespace, name)
+
+			Expect(ingress).To(Equal(expectedIP))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should return an hostname address", func() {
+			var (
+				ctx              = context.TODO()
+				expectedHostname = "cluster.local"
+			)
+
+			c.EXPECT().Get(ctx, key, gomock.AssignableToTypeOf(&corev1.Service{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, service *corev1.Service) error {
+				service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{Hostname: expectedHostname}}
+				return nil
+			})
+
+			ingress, err := GetLoadBalancerIngress(ctx, c, namespace, name)
+
+			Expect(ingress).To(Equal(expectedHostname))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should return an error if neither ip nor hostname were set", func() {
+			ctx := context.TODO()
+
+			c.EXPECT().Get(ctx, key, gomock.AssignableToTypeOf(&corev1.Service{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, service *corev1.Service) error {
+				service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{}}
+				return nil
+			})
+
+			_, err := GetLoadBalancerIngress(ctx, c, namespace, name)
+
+			Expect(err).To(MatchError("`.status.loadBalancer.ingress[]` has an element which does neither contain `.ip` nor `.hostname`"))
+		})
+	})
+
+	DescribeTable("#GetDomainInfoFromAnnotations",
+		func(annotations map[string]string, expectedProvider, expectedDomain, expectedErr gomegatypes.GomegaMatcher) {
+			provider, domain, err := GetDomainInfoFromAnnotations(annotations)
+			Expect(provider).To(expectedProvider)
+			Expect(domain).To(expectedDomain)
+			Expect(err).To(expectedErr)
+		},
+
+		Entry("no annotations", nil, BeEmpty(), BeEmpty(), HaveOccurred()),
+
+		Entry("no domain", map[string]string{
+			DNSProvider: "bar",
+		}, BeEmpty(), BeEmpty(), HaveOccurred()),
+
+		Entry("no provider", map[string]string{
+			DNSProvider: "bar",
+		}, BeEmpty(), BeEmpty(), HaveOccurred()),
+
+		Entry("all present", map[string]string{
+			DNSProvider: "bar",
+			DNSDomain:   "foo",
+		}, Equal("bar"), Equal("foo"), Not(HaveOccurred())),
+	)
+
+	Describe("#InjectCSIFeatureGates", func() {
+		csiFG := map[string]bool{
+			"VolumeSnapshotDataSource": true,
+			"KubeletPluginsWatcher":    true,
+			"CSINodeInfo":              true,
+			"CSIDriverRegistry":        true,
+		}
+
+		It("should return nil because version is < 1.13", func() {
+			fg, err := InjectCSIFeatureGates("1.12.1", nil)
+
+			Expect(err).To(Not(HaveOccurred()))
+			Expect(fg).To(BeNil())
+		})
+
+		It("should return the CSI FG because version is >= 1.13", func() {
+			fg, err := InjectCSIFeatureGates("1.13.1", nil)
+
+			Expect(err).To(Not(HaveOccurred()))
+			Expect(fg).To(Equal(csiFG))
+		})
+
+		It("should return the CSI FG because version is >= 1.13 (with other features)", func() {
+			featureGates := map[string]bool{"foo": false, "bar": true}
+
+			result := make(map[string]bool, len(featureGates)+len(csiFG))
+			for k, v := range featureGates {
+				result[k] = v
+			}
+			for k, v := range csiFG {
+				result[k] = v
+			}
+
+			fg, err := InjectCSIFeatureGates("1.13.1", featureGates)
+
+			Expect(err).To(Not(HaveOccurred()))
+			Expect(fg).To(Equal(result))
+		})
+	})
 })

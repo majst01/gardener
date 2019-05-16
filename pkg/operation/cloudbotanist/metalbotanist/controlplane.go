@@ -112,6 +112,17 @@ func (b *MetalBotanist) GenerateKubeSchedulerConfig() (map[string]interface{}, e
 	return nil, nil
 }
 
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *MetalBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	// FIXME Metal ETC Storage Class
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "25Gi",
+		"provisioner": "k8s.io/minikube-hostpath",
+		"parameters":  map[string]interface{}{},
+	}
+}
+
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.
 func (b *MetalBotanist) GenerateEtcdBackupConfig() (map[string][]byte, map[string]interface{}, error) {
 	containerName := "containerName"

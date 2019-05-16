@@ -24,12 +24,10 @@ import (
 	unsafe "unsafe"
 
 	config "github.com/gardener/gardener/pkg/controllermanager/apis/config"
-	apisconfig "k8s.io/apimachinery/pkg/apis/config"
-	configv1alpha1 "k8s.io/apimachinery/pkg/apis/config/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	apisconfigv1alpha1 "k8s.io/apiserver/pkg/apis/config/v1alpha1"
+	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
 	klog "k8s.io/klog"
 )
 
@@ -110,6 +108,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*DiscoveryConfiguration)(nil), (*config.DiscoveryConfiguration)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration(a.(*DiscoveryConfiguration), b.(*config.DiscoveryConfiguration), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*config.DiscoveryConfiguration)(nil), (*DiscoveryConfiguration)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration(a.(*config.DiscoveryConfiguration), b.(*DiscoveryConfiguration), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*HTTPSServer)(nil), (*config.HTTPSServer)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_HTTPSServer_To_config_HTTPSServer(a.(*HTTPSServer), b.(*config.HTTPSServer), scope)
 	}); err != nil {
@@ -127,6 +135,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*config.LeaderElectionConfiguration)(nil), (*LeaderElectionConfiguration)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(a.(*config.LeaderElectionConfiguration), b.(*LeaderElectionConfiguration), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*PlantConfiguration)(nil), (*config.PlantConfiguration)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_PlantConfiguration_To_config_PlantConfiguration(a.(*PlantConfiguration), b.(*config.PlantConfiguration), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*config.PlantConfiguration)(nil), (*PlantConfiguration)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_config_PlantConfiguration_To_v1alpha1_PlantConfiguration(a.(*config.PlantConfiguration), b.(*PlantConfiguration), scope)
 	}); err != nil {
 		return err
 	}
@@ -353,19 +371,13 @@ func autoConvert_v1alpha1_ControllerManagerConfiguration_To_config_ControllerMan
 	if err := configv1alpha1.Convert_v1alpha1_ClientConnectionConfiguration_To_config_ClientConnectionConfiguration(&in.ClientConnection, &out.ClientConnection, s); err != nil {
 		return err
 	}
-	if in.GardenerClientConnection != nil {
-		in, out := &in.GardenerClientConnection, &out.GardenerClientConnection
-		*out = new(apisconfig.ClientConnectionConfiguration)
-		if err := configv1alpha1.Convert_v1alpha1_ClientConnectionConfiguration_To_config_ClientConnectionConfiguration(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.GardenerClientConnection = nil
-	}
 	if err := Convert_v1alpha1_ControllerManagerControllerConfiguration_To_config_ControllerManagerControllerConfiguration(&in.Controllers, &out.Controllers, s); err != nil {
 		return err
 	}
 	if err := Convert_v1alpha1_LeaderElectionConfiguration_To_config_LeaderElectionConfiguration(&in.LeaderElection, &out.LeaderElection, s); err != nil {
+		return err
+	}
+	if err := Convert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration(&in.Discovery, &out.Discovery, s); err != nil {
 		return err
 	}
 	out.LogLevel = in.LogLevel
@@ -387,19 +399,13 @@ func autoConvert_config_ControllerManagerConfiguration_To_v1alpha1_ControllerMan
 	if err := configv1alpha1.Convert_config_ClientConnectionConfiguration_To_v1alpha1_ClientConnectionConfiguration(&in.ClientConnection, &out.ClientConnection, s); err != nil {
 		return err
 	}
-	if in.GardenerClientConnection != nil {
-		in, out := &in.GardenerClientConnection, &out.GardenerClientConnection
-		*out = new(configv1alpha1.ClientConnectionConfiguration)
-		if err := configv1alpha1.Convert_config_ClientConnectionConfiguration_To_v1alpha1_ClientConnectionConfiguration(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.GardenerClientConnection = nil
-	}
 	if err := Convert_config_ControllerManagerControllerConfiguration_To_v1alpha1_ControllerManagerControllerConfiguration(&in.Controllers, &out.Controllers, s); err != nil {
 		return err
 	}
 	if err := Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(&in.LeaderElection, &out.LeaderElection, s); err != nil {
+		return err
+	}
+	if err := Convert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration(&in.Discovery, &out.Discovery, s); err != nil {
 		return err
 	}
 	out.LogLevel = in.LogLevel
@@ -424,6 +430,7 @@ func autoConvert_v1alpha1_ControllerManagerControllerConfiguration_To_config_Con
 	out.CloudProfile = (*config.CloudProfileControllerConfiguration)(unsafe.Pointer(in.CloudProfile))
 	out.ControllerRegistration = (*config.ControllerRegistrationControllerConfiguration)(unsafe.Pointer(in.ControllerRegistration))
 	out.ControllerInstallation = (*config.ControllerInstallationControllerConfiguration)(unsafe.Pointer(in.ControllerInstallation))
+	out.Plant = (*config.PlantConfiguration)(unsafe.Pointer(in.Plant))
 	out.SecretBinding = (*config.SecretBindingControllerConfiguration)(unsafe.Pointer(in.SecretBinding))
 	out.Project = (*config.ProjectControllerConfiguration)(unsafe.Pointer(in.Project))
 	out.Quota = (*config.QuotaControllerConfiguration)(unsafe.Pointer(in.Quota))
@@ -458,6 +465,7 @@ func autoConvert_config_ControllerManagerControllerConfiguration_To_v1alpha1_Con
 	out.CloudProfile = (*CloudProfileControllerConfiguration)(unsafe.Pointer(in.CloudProfile))
 	out.ControllerRegistration = (*ControllerRegistrationControllerConfiguration)(unsafe.Pointer(in.ControllerRegistration))
 	out.ControllerInstallation = (*ControllerInstallationControllerConfiguration)(unsafe.Pointer(in.ControllerInstallation))
+	out.Plant = (*PlantConfiguration)(unsafe.Pointer(in.Plant))
 	out.SecretBinding = (*SecretBindingControllerConfiguration)(unsafe.Pointer(in.SecretBinding))
 	out.Project = (*ProjectControllerConfiguration)(unsafe.Pointer(in.Project))
 	out.Quota = (*QuotaControllerConfiguration)(unsafe.Pointer(in.Quota))
@@ -505,6 +513,30 @@ func Convert_config_ControllerRegistrationControllerConfiguration_To_v1alpha1_Co
 	return autoConvert_config_ControllerRegistrationControllerConfiguration_To_v1alpha1_ControllerRegistrationControllerConfiguration(in, out, s)
 }
 
+func autoConvert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration(in *DiscoveryConfiguration, out *config.DiscoveryConfiguration, s conversion.Scope) error {
+	out.DiscoveryCacheDir = (*string)(unsafe.Pointer(in.DiscoveryCacheDir))
+	out.HTTPCacheDir = (*string)(unsafe.Pointer(in.HTTPCacheDir))
+	out.TTL = (*v1.Duration)(unsafe.Pointer(in.TTL))
+	return nil
+}
+
+// Convert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration is an autogenerated conversion function.
+func Convert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration(in *DiscoveryConfiguration, out *config.DiscoveryConfiguration, s conversion.Scope) error {
+	return autoConvert_v1alpha1_DiscoveryConfiguration_To_config_DiscoveryConfiguration(in, out, s)
+}
+
+func autoConvert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration(in *config.DiscoveryConfiguration, out *DiscoveryConfiguration, s conversion.Scope) error {
+	out.DiscoveryCacheDir = (*string)(unsafe.Pointer(in.DiscoveryCacheDir))
+	out.HTTPCacheDir = (*string)(unsafe.Pointer(in.HTTPCacheDir))
+	out.TTL = (*v1.Duration)(unsafe.Pointer(in.TTL))
+	return nil
+}
+
+// Convert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration is an autogenerated conversion function.
+func Convert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration(in *config.DiscoveryConfiguration, out *DiscoveryConfiguration, s conversion.Scope) error {
+	return autoConvert_config_DiscoveryConfiguration_To_v1alpha1_DiscoveryConfiguration(in, out, s)
+}
+
 func autoConvert_v1alpha1_HTTPSServer_To_config_HTTPSServer(in *HTTPSServer, out *config.HTTPSServer, s conversion.Scope) error {
 	if err := Convert_v1alpha1_Server_To_config_Server(&in.Server, &out.Server, s); err != nil {
 		return err
@@ -536,7 +568,7 @@ func Convert_config_HTTPSServer_To_v1alpha1_HTTPSServer(in *config.HTTPSServer, 
 }
 
 func autoConvert_v1alpha1_LeaderElectionConfiguration_To_config_LeaderElectionConfiguration(in *LeaderElectionConfiguration, out *config.LeaderElectionConfiguration, s conversion.Scope) error {
-	if err := apisconfigv1alpha1.Convert_v1alpha1_LeaderElectionConfiguration_To_config_LeaderElectionConfiguration(&in.LeaderElectionConfiguration, &out.LeaderElectionConfiguration, s); err != nil {
+	if err := configv1alpha1.Convert_v1alpha1_LeaderElectionConfiguration_To_config_LeaderElectionConfiguration(&in.LeaderElectionConfiguration, &out.LeaderElectionConfiguration, s); err != nil {
 		return err
 	}
 	out.LockObjectNamespace = in.LockObjectNamespace
@@ -550,7 +582,7 @@ func Convert_v1alpha1_LeaderElectionConfiguration_To_config_LeaderElectionConfig
 }
 
 func autoConvert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(in *config.LeaderElectionConfiguration, out *LeaderElectionConfiguration, s conversion.Scope) error {
-	if err := apisconfigv1alpha1.Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(&in.LeaderElectionConfiguration, &out.LeaderElectionConfiguration, s); err != nil {
+	if err := configv1alpha1.Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(&in.LeaderElectionConfiguration, &out.LeaderElectionConfiguration, s); err != nil {
 		return err
 	}
 	out.LockObjectNamespace = in.LockObjectNamespace
@@ -561,6 +593,28 @@ func autoConvert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionCo
 // Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration is an autogenerated conversion function.
 func Convert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(in *config.LeaderElectionConfiguration, out *LeaderElectionConfiguration, s conversion.Scope) error {
 	return autoConvert_config_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration(in, out, s)
+}
+
+func autoConvert_v1alpha1_PlantConfiguration_To_config_PlantConfiguration(in *PlantConfiguration, out *config.PlantConfiguration, s conversion.Scope) error {
+	out.ConcurrentSyncs = in.ConcurrentSyncs
+	out.SyncPeriod = in.SyncPeriod
+	return nil
+}
+
+// Convert_v1alpha1_PlantConfiguration_To_config_PlantConfiguration is an autogenerated conversion function.
+func Convert_v1alpha1_PlantConfiguration_To_config_PlantConfiguration(in *PlantConfiguration, out *config.PlantConfiguration, s conversion.Scope) error {
+	return autoConvert_v1alpha1_PlantConfiguration_To_config_PlantConfiguration(in, out, s)
+}
+
+func autoConvert_config_PlantConfiguration_To_v1alpha1_PlantConfiguration(in *config.PlantConfiguration, out *PlantConfiguration, s conversion.Scope) error {
+	out.ConcurrentSyncs = in.ConcurrentSyncs
+	out.SyncPeriod = in.SyncPeriod
+	return nil
+}
+
+// Convert_config_PlantConfiguration_To_v1alpha1_PlantConfiguration is an autogenerated conversion function.
+func Convert_config_PlantConfiguration_To_v1alpha1_PlantConfiguration(in *config.PlantConfiguration, out *PlantConfiguration, s conversion.Scope) error {
+	return autoConvert_config_PlantConfiguration_To_v1alpha1_PlantConfiguration(in, out, s)
 }
 
 func autoConvert_v1alpha1_ProjectControllerConfiguration_To_config_ProjectControllerConfiguration(in *ProjectControllerConfiguration, out *config.ProjectControllerConfiguration, s conversion.Scope) error {

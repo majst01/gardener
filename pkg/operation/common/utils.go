@@ -23,15 +23,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
 	"time"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
-	"github.com/gardener/gardener/pkg/chartrenderer"
 	gardenlisters "github.com/gardener/gardener/pkg/client/garden/listers/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/utils"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+
 	jsoniter "github.com/json-iterator/go"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,45 +42,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var json = jsoniter.ConfigFastest
-
-// ApplyChart takes a Kubernetes client <k8sClient>, chartRender <renderer>, path to a chart <chartPath>, name of the release <name>,
-// release's namespace <namespace> and two maps <defaultValues>, <additionalValues>, and renders the template
-// based on the merged result of both value maps. The resulting manifest will be applied to the cluster the
-// Kubernetes client has been created for.
-func ApplyChart(k8sClient kubernetes.Interface, renderer chartrenderer.ChartRenderer, chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}) error {
-	return ApplyChartWithOptions(k8sClient, renderer, chartPath, name, namespace, defaultValues, additionalValues, kubernetes.DefaultApplierOptions)
-}
-
-// ApplyChartWithOptions takes a Kubernetes client <k8sClient>, chartRender <renderer>, path to a chart <chartPath>, name of the release <name>,
-// release's namespace <namespace> and two maps <defaultValues>, <additionalValues>, and renders the template
-// based on the merged result of both value maps. The resulting manifest will be applied to the cluster the
-// Kubernetes client has been created for.
-// <options> determines how the apply logic is executed.
-func ApplyChartWithOptions(k8sClient kubernetes.Interface, renderer chartrenderer.ChartRenderer, chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}, options kubernetes.ApplierOptions) error {
-	release, err := renderer.Render(chartPath, name, namespace, utils.MergeMaps(defaultValues, additionalValues))
-	if err != nil {
-		return err
-	}
-	manifestReader := kubernetes.NewManifestReader(release.Manifest())
-
-	return k8sClient.Applier().ApplyManifest(context.Background(), manifestReader, options)
-}
-
-// ApplyChartInNamespace is the same as ApplyChart except that it forces the namespace for chart objects when applying the chart, this is because sometimes native chart
-// objects do not come with a Release.Namespace option and leave the namespace field empty.
-func ApplyChartInNamespace(ctx context.Context, k8sClient kubernetes.Interface, renderer chartrenderer.ChartRenderer, chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}) error {
-	release, err := renderer.Render(chartPath, name, namespace, utils.MergeMaps(defaultValues, additionalValues))
-	if err != nil {
-		return err
-	}
-
-	manifestReader := kubernetes.NewManifestReader(release.Manifest())
-	nameSpaceSettingsReader := kubernetes.NewNamespaceSettingReader(manifestReader, namespace)
-	return k8sClient.Applier().ApplyManifest(ctx, nameSpaceSettingsReader, kubernetes.DefaultApplierOptions)
-}
 
 // GetSecretKeysWithPrefix returns a list of keys of the given map <m> which are prefixed with <kind>.
 func GetSecretKeysWithPrefix(kind string, m map[string]*corev1.Secret) []string {
@@ -146,22 +115,9 @@ func DistributePositiveIntOrPercent(zoneIndex int, intOrPercent intstr.IntOrStri
 	return intstr.FromInt(DistributeOverZones(zoneIndex, int(intOrPercent.IntVal), zoneSize))
 }
 
-// IdentifyAddressType takes a string containing an address (hostname or IP) and tries to parse it
-// to an IP address in order to identify whether it is a DNS name or not.
-// It returns a tuple whereby the first element is either "ip" or "hostname", and the second the
-// parsed IP address of type net.IP (in case the loadBalancer is an IP address, otherwise it is nil).
-func IdentifyAddressType(address string) (string, net.IP) {
-	addr := net.ParseIP(address)
-	addrType := "hostname"
-	if addr != nil {
-		addrType = "ip"
-	}
-	return addrType, addr
-}
-
 // ComputeClusterIP parses the provided <cidr> and sets the last byte to the value of <lastByte>.
 // For example, <cidr> = 100.64.0.0/11 and <lastByte> = 10 the result would be 100.64.0.10
-func ComputeClusterIP(cidr gardenv1beta1.CIDR, lastByte byte) string {
+func ComputeClusterIP(cidr gardencorev1alpha1.CIDR, lastByte byte) string {
 	ip, _, _ := net.ParseCIDR(string(cidr))
 	ip = ip.To4()
 	ip[3] = lastByte
@@ -200,34 +156,30 @@ func GenerateAddonConfig(values map[string]interface{}, enabled bool) map[string
 	return v
 }
 
-// GetLoadBalancerIngress takes a K8SClient, a namespace and a service name. It queries for a load balancer's technical name
+// GetLoadBalancerIngress takes a context, a client, a namespace and a service name. It queries for a load balancer's technical name
 // (ip address or hostname). It returns the value of the technical name whereby it always prefers the IP address (if given)
 // over the hostname. It also returns the list of all load balancer ingresses.
-func GetLoadBalancerIngress(client kubernetes.Interface, namespace, name string) (string, []corev1.LoadBalancerIngress, error) {
+func GetLoadBalancerIngress(ctx context.Context, client client.Client, namespace, name string) (string, error) {
+	service := &corev1.Service{}
+	if err := client.Get(ctx, kutil.Key(namespace, name), service); err != nil {
+		return "", err
+	}
+
 	var (
-		loadBalancerIngress  string
-		serviceStatusIngress []corev1.LoadBalancerIngress
+		serviceStatusIngress = service.Status.LoadBalancer.Ingress
+		length               = len(serviceStatusIngress)
 	)
 
-	service, err := client.GetService(namespace, name)
-	if err != nil {
-		return "", nil, err
+	switch {
+	case length == 0:
+		return "", errors.New("`.status.loadBalancer.ingress[]` has no elements yet, i.e. external load balancer has not been created (is your quota limit exceeded/reached?)")
+	case serviceStatusIngress[length-1].IP != "":
+		return serviceStatusIngress[length-1].IP, nil
+	case serviceStatusIngress[length-1].Hostname != "":
+		return serviceStatusIngress[length-1].Hostname, nil
 	}
 
-	serviceStatusIngress = service.Status.LoadBalancer.Ingress
-	length := len(serviceStatusIngress)
-	if length == 0 {
-		return "", nil, errors.New("`.status.loadBalancer.ingress[]` has no elements yet, i.e. external load balancer has not been created (is your quota limit exceeded/reached?)")
-	}
-
-	if serviceStatusIngress[length-1].IP != "" {
-		loadBalancerIngress = serviceStatusIngress[length-1].IP
-	} else if serviceStatusIngress[length-1].Hostname != "" {
-		loadBalancerIngress = serviceStatusIngress[length-1].Hostname
-	} else {
-		return "", nil, errors.New("`.status.loadBalancer.ingress[]` has an element which does neither contain `.ip` nor `.hostname`")
-	}
-	return loadBalancerIngress, serviceStatusIngress, nil
+	return "", errors.New("`.status.loadBalancer.ingress[]` has an element which does neither contain `.ip` nor `.hostname`")
 }
 
 // GenerateTerraformVariablesEnvironment takes a <secret> and a <keyValueMap> and builds an environment which
@@ -271,56 +223,6 @@ func IsFollowingNewNamingConvention(seedNamespace string) bool {
 func ReplaceCloudProviderConfigKey(cloudProviderConfig, separator, key, value string) string {
 	keyValueRegexp := regexp.MustCompile(fmt.Sprintf(`(\Q%s\E%s)([^\n]*)`, key, separator))
 	return keyValueRegexp.ReplaceAllString(cloudProviderConfig, fmt.Sprintf(`${1}%q`, strings.Replace(value, `$`, `$$`, -1)))
-}
-
-type errorWithCode struct {
-	code    gardenv1beta1.ErrorCode
-	message string
-}
-
-// NewErrorWithCode creates a new error that additionally exposes the given code via the Coder interface.
-func NewErrorWithCode(code gardenv1beta1.ErrorCode, message string) error {
-	return &errorWithCode{code, message}
-}
-
-func (e *errorWithCode) Code() gardenv1beta1.ErrorCode {
-	return e.code
-}
-
-func (e *errorWithCode) Error() string {
-	return e.message
-}
-
-var (
-	unauthorizedRegexp           = regexp.MustCompile(`(?i)(Unauthorized|InvalidClientTokenId|SignatureDoesNotMatch|Authentication failed|AuthFailure|AuthorizationFailed|invalid character|invalid_grant|invalid_client|Authorization Profile was not found|cannot fetch token|no active subscriptions)`)
-	quotaExceededRegexp          = regexp.MustCompile(`(?i)(LimitExceeded|Quota)`)
-	insufficientPrivilegesRegexp = regexp.MustCompile(`(?i)(AccessDenied|Forbidden|deny|denied)`)
-	dependenciesRegexp           = regexp.MustCompile(`(?i)(PendingVerification|Access Not Configured|accessNotConfigured|DependencyViolation|OptInRequired|DeleteConflict|Conflict)`)
-)
-
-func determineErrorCode(message string) gardenv1beta1.ErrorCode {
-	switch {
-	case unauthorizedRegexp.MatchString(message):
-		return gardenv1beta1.ErrorInfraUnauthorized
-	case quotaExceededRegexp.MatchString(message):
-		return gardenv1beta1.ErrorInfraQuotaExceeded
-	case insufficientPrivilegesRegexp.MatchString(message):
-		return gardenv1beta1.ErrorInfraInsufficientPrivileges
-	case dependenciesRegexp.MatchString(message):
-		return gardenv1beta1.ErrorInfraDependencies
-	default:
-		return ""
-	}
-}
-
-// DetermineError determines the Garden error code for the given error message.
-func DetermineError(message string) error {
-	code := determineErrorCode(message)
-	if code == "" {
-		return errors.New(message)
-	}
-
-	return &errorWithCode{code, message}
 }
 
 // ProjectForNamespace returns the project object responsible for a given <namespace>. It tries to identify the project object by looking for the namespace
@@ -378,19 +280,6 @@ func MergeOwnerReferences(references []metav1.OwnerReference, newReferences ...m
 	return references
 }
 
-// HasInitializer checks whether the passed name is part of the pending initializers.
-func HasInitializer(initializers *metav1.Initializers, name string) bool {
-	if initializers == nil {
-		return false
-	}
-	for _, initializer := range initializers.Pending {
-		if initializer.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 // ReadLeaderElectionRecord returns the leader election record for a given lock type and a namespace/name combination.
 func ReadLeaderElectionRecord(k8sClient kubernetes.Interface, lock, namespace, name string) (*resourcelock.LeaderElectionRecord, error) {
 	var (
@@ -442,6 +331,97 @@ func ShouldObjectBeRemoved(obj metav1.Object, gracePeriod time.Duration) bool {
 	}
 
 	return deletionTimestamp.Time.Before(time.Now().Add(-gracePeriod))
+}
+
+// DeleteVpa delete all resources required for the vertical pod autoscaler in the given namespace.
+func DeleteVpa(k8sClient kubernetes.Interface, namespace string) error {
+	if k8sClient == nil {
+		return fmt.Errorf("require kubernetes client")
+	}
+
+	listOptions := metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", GardenRole, GardenRoleVpa),
+	}
+
+	// Delete all Crds with label "garden.sapcloud.io/role=vpa"
+	if err := k8sClient.APIExtension().ApiextensionsV1beta1().CustomResourceDefinitions().DeleteCollection(
+		&metav1.DeleteOptions{}, listOptions); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete all Deployments with label "garden.sapcloud.io/role=vpa"
+	deletePropagation := metav1.DeletePropagationForeground
+	if err := k8sClient.Kubernetes().AppsV1().Deployments(namespace).DeleteCollection(
+		&metav1.DeleteOptions{
+			PropagationPolicy: &deletePropagation,
+		}, listOptions); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete all ClusterRoles with label "garden.sapcloud.io/role=vpa"
+	if err := k8sClient.Kubernetes().RbacV1().ClusterRoles().DeleteCollection(
+		&metav1.DeleteOptions{}, listOptions); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete all ClusterRoleBindings with label "garden.sapcloud.io/role=vpa"
+	if err := k8sClient.Kubernetes().RbacV1().ClusterRoleBindings().DeleteCollection(
+		&metav1.DeleteOptions{}, listOptions); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete all ServiceAccounts with label "garden.sapcloud.io/role=vpa"
+	if err := k8sClient.Kubernetes().CoreV1().ServiceAccounts(namespace).DeleteCollection(
+		&metav1.DeleteOptions{}, listOptions); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete vpa-exporter service
+	if err := k8sClient.Kubernetes().CoreV1().Services(namespace).Delete("vpa-exporter",
+		&metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete Service
+	if err := k8sClient.Client().Delete(context.TODO(), &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "vpa-webhook"}}); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete Secret
+	if err := k8sClient.Client().Delete(context.TODO(), &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "vpa-tls-certs"}}); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	return nil
+}
+
+// InjectCSIFeatureGates adds required feature gates for csi when starting Kubelet/Kube-APIServer based on kubernetes version
+func InjectCSIFeatureGates(kubeVersion string, featureGates map[string]bool) (map[string]bool, error) {
+	lessV1_13, err := utils.CompareVersions(kubeVersion, "<", "v1.13.0")
+	if err != nil {
+		return featureGates, err
+	}
+	if lessV1_13 {
+		return featureGates, nil
+	}
+
+	//https://kubernetes-csi.github.io/docs/Setup.html
+	csiFG := map[string]bool{
+		"VolumeSnapshotDataSource": true,
+		"KubeletPluginsWatcher":    true,
+		"CSINodeInfo":              true,
+		"CSIDriverRegistry":        true,
+	}
+
+	if featureGates == nil {
+		return csiFG, nil
+	}
+
+	for k, v := range csiFG {
+		featureGates[k] = v
+	}
+
+	return featureGates, nil
 }
 
 // DeleteLoggingStack deletes all resource of the EFK logging stack in the given namespace.
@@ -529,4 +509,46 @@ func DeleteAlertmanager(k8sClient kubernetes.Interface, namespace string) error 
 		}
 	}
 	return nil
+}
+
+// GetDomainInfoFromAnnotations returns the provider and the domain that is specified in the give annotations.
+func GetDomainInfoFromAnnotations(annotations map[string]string) (provider string, domain string, err error) {
+	if annotations == nil {
+		return "", "", fmt.Errorf("domain secret has no annotations")
+	}
+
+	if providerAnnotation, ok := annotations[DNSProviderDeprecated]; ok {
+		provider = providerAnnotation
+	}
+	if providerAnnotation, ok := annotations[DNSProvider]; ok {
+		provider = providerAnnotation
+	}
+
+	if domainAnnotation, ok := annotations[DNSDomainDeprecated]; ok {
+		domain = domainAnnotation
+	}
+	if domainAnnotation, ok := annotations[DNSDomain]; ok {
+		domain = domainAnnotation
+	}
+
+	if len(domain) == 0 {
+		return "", "", fmt.Errorf("missing dns domain annotation on domain secret")
+	}
+	if len(provider) == 0 {
+		return "", "", fmt.Errorf("missing dns provider annotation on domain secret")
+	}
+
+	return
+}
+
+// CurrentReplicaCount returns the current replicaCount for the given deployment.
+func CurrentReplicaCount(client client.Client, namespace, deploymentName string) (int32, error) {
+	deployment := &appsv1.Deployment{}
+	if err := client.Get(context.TODO(), kutil.Key(namespace, deploymentName), deployment); err != nil && !apierrors.IsNotFound(err) {
+		return 0, err
+	}
+	if deployment.Spec.Replicas == nil {
+		return 0, nil
+	}
+	return *deployment.Spec.Replicas, nil
 }

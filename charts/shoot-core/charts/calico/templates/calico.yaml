@@ -201,8 +201,10 @@ spec:
             exec:
               command:
               - /bin/calico-node
-              - -bird-ready
               - -felix-ready
+              {{- if ne .Values.cloudProvider "azure" }}
+              - -bird-ready
+              {{- end }}
             periodSeconds: 10
           volumeMounts:
             - mountPath: /lib/modules
@@ -386,6 +388,7 @@ metadata:
   name: felixconfigurations.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -403,6 +406,7 @@ metadata:
   name: bgppeers.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -420,6 +424,7 @@ metadata:
   name: bgpconfigurations.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -437,6 +442,7 @@ metadata:
   name: ippools.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -454,6 +460,7 @@ metadata:
   name: hostendpoints.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -471,6 +478,7 @@ metadata:
   name: clusterinformations.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -488,6 +496,7 @@ metadata:
   name: globalnetworkpolicies.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -505,6 +514,7 @@ metadata:
   name: globalnetworksets.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Cluster
   group: crd.projectcalico.org
@@ -522,6 +532,7 @@ metadata:
   name: networkpolicies.crd.projectcalico.org
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
+    garden.sapcloud.io/role: system-component
 spec:
   scope: Namespaced
   group: crd.projectcalico.org

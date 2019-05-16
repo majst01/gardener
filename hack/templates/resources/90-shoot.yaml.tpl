@@ -3,10 +3,10 @@
 
   values={}
   if context.get("values", "") != "":
-    values=yaml.load(open(context.get("values", "")))
+    values=yaml.load(open(context.get("values", "")), Loader=yaml.Loader)
 
   if context.get("cloud", "") == "":
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,local} flag")
+    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,packet,local} flag")
 
   def value(path, default):
     keys=str.split(path, ".")
@@ -25,25 +25,28 @@
   kubernetesVersion=""
   if cloud == "aws":
     region="eu-west-1"
-    kubernetesVersion="1.13.3"
+    kubernetesVersion="1.14.0"
   elif cloud == "azure" or cloud == "az":
     region="westeurope"
-    kubernetesVersion="1.13.3"
+    kubernetesVersion="1.14.0"
   elif cloud == "gcp":
     region="europe-west1"
-    kubernetesVersion="1.13.3"
+    kubernetesVersion="1.14.0"
   elif cloud == "alicloud":
     region="cn-beijing"
-    kubernetesVersion="1.11.7"
+    kubernetesVersion="1.14.0"
+  elif cloud == "packet":
+    region="EWR1"
+    kubernetesVersion="1.14.0"
   elif cloud == "openstack" or cloud == "os":
     region="europe-1"
     kubernetesVersion="1.13.3"
   elif cloud == "metal":
     region="vagrant-lab"
-    kubernetesVersion="1.13.3"
+    kubernetesVersion="1.14.0"
   elif cloud == "local":
     region="local"
-    kubernetesVersion="1.13.3"
+    kubernetesVersion="1.14.0"
 %>---
 apiVersion: garden.sapcloud.io/v1beta1
 kind: Shoot
@@ -51,10 +54,10 @@ metadata:
   name: ${value("metadata.name", "johndoe-" + cloud)}
   namespace: ${value("metadata.namespace", "garden-dev")}<% annotations = value("metadata.annotations", {}); labels = value("metadata.labels", {}) %>
   % if annotations != {}:
-  annotations: ${yaml.dump(annotations, width=10000)}
+  annotations: ${yaml.dump(annotations, width=10000, default_flow_style=None)}
   % endif
   % if labels != {}:
-  labels: ${yaml.dump(labels, width=10000)}
+  labels: ${yaml.dump(labels, width=10000, default_flow_style=None)}
   % endif
 spec:
   cloud:
@@ -78,16 +81,24 @@ spec:
         workers: ${value("spec.cloud.aws.networks.workers", ["10.250.0.0/19"])}
       workers:<% workers=value("spec.cloud.aws.workers", []) %>
       % if workers != []:
-      ${yaml.dump(workers, width=10000)}
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
       % else:
       - name: cpu-worker
-        machineType: m4.large
+        machineType: m5.large
         volumeType: gp2
         volumeSize: 20Gi
         autoScalerMin: 2
         autoScalerMax: 2
         maxSurge: 1
         maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
       % endif
       zones: ${value("spec.cloud.aws.zones", ["eu-west-1a"])}
     % endif
@@ -112,16 +123,24 @@ spec:
         workers: ${value("spec.cloud.azure.networks.workers", "10.250.0.0/19")}
       workers:<% workers=value("spec.cloud.azure.workers", []) %>
       % if workers != []:
-      ${yaml.dump(workers, width=10000)}
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
       % else:
       - name: cpu-worker
-        machineType: Standard_DS2_v2
+        machineType: Standard_D2_v3
         volumeType: standard
         volumeSize: 35Gi # must be at least 35Gi for Azure VMs
         autoScalerMin: 2
         autoScalerMax: 2
         maxSurge: 1
         maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
       % endif
     % endif
     % if cloud == "alicloud":
@@ -138,7 +157,7 @@ spec:
         workers: ${value("spec.cloud.alicloud.networks.workers", ["10.250.0.0/19"])}
       workers:<% workers=value("spec.cloud.alicloud.workers", []) %>
       % if workers != []:
-      ${yaml.dump(workers, width=10000)}
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
       % else:
       - name: small
         machineType: ecs.sn2ne.xlarge
@@ -146,8 +165,43 @@ spec:
         volumeSize: 30Gi
         autoScalerMin: 1
         autoScalerMax: 2
+        maxSurge: 1
+        maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
       % endif
       zones: ${value("spec.cloud.alicloud.zones", ["cn-beijing-f"])}
+    % endif
+    % if cloud == "packet":
+    packet:
+      workers:<% workers=value("spec.cloud.packet.workers", []) %>
+      % if workers != []:
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
+      % else:
+      - name: small
+        machineType: c1.small
+        volumeType: standard
+        volumeSize: 30Gi
+        autoScalerMin: 1
+        autoScalerMax: 2
+        maxSurge: 1
+        maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
+      % endif
+      zones: ${value("spec.cloud.packet.zones", ["EWR1"])}
     % endif
     % if cloud == "gcp":
     gcp:
@@ -159,10 +213,11 @@ spec:
       # vpc:
       #   name: my-vpc
       % endif
+        internal: ${value("spec.cloud.gcp.networks.internal", "10.250.112.0/22")}
         workers: ${value("spec.cloud.gcp.networks.workers", ["10.250.0.0/19"])}
       workers:<% workers=value("spec.cloud.gcp.workers", []) %>
       % if workers != []:
-      ${yaml.dump(workers, width=10000)}
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
       % else:
       - name: cpu-worker
         machineType: n1-standard-4
@@ -172,6 +227,14 @@ spec:
         autoScalerMax: 2
         maxSurge: 1
         maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
       % endif
       zones: ${value("spec.cloud.gcp.zones", ["europe-west1-b"])}
     % endif
@@ -190,7 +253,7 @@ spec:
         workers: ${value("spec.cloud.openstack.networks.workers", ["10.250.0.0/19"])}
       workers:<% workers=value("spec.cloud.openstack.workers", []) %>
       % if workers != []:
-      ${yaml.dump(workers, width=10000)}
+      ${yaml.dump(workers, width=10000, default_flow_style=None)}
       % else:
       - name: cpu-worker
         machineType: medium_2_4
@@ -198,6 +261,14 @@ spec:
         autoScalerMax: 2
         maxSurge: 1
         maxUnavailable: 0
+      # labels:
+      #   key: value
+      # annotations:
+      #   key: value
+      # taints: # See also https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      # - key: foo
+      #   value: bar
+      #   effect: NoSchedule
       % endif
       zones: ${value("spec.cloud.openstack.zones", ["europe-1a"])}
     % endif
@@ -206,6 +277,8 @@ spec:
       endpoint: ${value("spec.cloud.local.endpoint", "localhost:3777")} # endpoint service pointing to gardener-local-provider
       networks:
         workers: ${value("spec.cloud.local.networks.workers", ["192.168.99.200/25"])}
+  #   machineImage:
+  #     name: coreos
     % endif
     % if cloud == "metal":
     metal:
@@ -236,7 +309,7 @@ spec:
     version: ${value("spec.kubernetes.version", kubernetesVersion)}<% kubeAPIServer=value("spec.kubernetes.kubeAPIServer", {}) %><% cloudControllerManager=value("spec.kubernetes.cloudControllerManager", {}) %><% kubeControllerManager=value("spec.kubernetes.kubeControllerManager", {}) %><% kubeScheduler=value("spec.kubernetes.kubeScheduler", {}) %><% kubeProxy=value("spec.kubernetes.kubeProxy", {}) %><% kubelet=value("spec.kubernetes.kubelet", {}) %>
     allowPrivilegedContainers: ${value("spec.kubernetes.allowPrivilegedContainers", "true")} # 'true' means that all authenticated users can use the "gardener.privileged" PodSecurityPolicy, allowing full unrestricted access to Pod features.
     % if kubeAPIServer != {}:
-    kubeAPIServer: ${yaml.dump(kubeAPIServer, width=10000)}
+    kubeAPIServer: ${yaml.dump(kubeAPIServer, width=10000, default_flow_style=None)}
     % else:
   # kubeAPIServer:
   #   featureGates:
@@ -271,14 +344,14 @@ spec:
   #         name: auditpolicy
   % endif
     % if cloudControllerManager != {}:
-    cloudControllerManager: ${yaml.dump(cloudControllerManager, width=10000)}
+    cloudControllerManager: ${yaml.dump(cloudControllerManager, width=10000, default_flow_style=None)}
     % else:
   # cloudControllerManager:
   #   featureGates:
   #     SomeKubernetesFeature: true
   % endif
     % if kubeControllerManager != {}:
-    kubeControllerManager: ${yaml.dump(kubeControllerManager, width=10000)}
+    kubeControllerManager: ${yaml.dump(kubeControllerManager, width=10000, default_flow_style=None)}
     % else:
   # kubeControllerManager:
   #   featureGates:
@@ -295,37 +368,49 @@ spec:
   #     cpuInitializationPeriod: 5m0s
   % endif
     % if kubeScheduler != {}:
-    kubeScheduler: ${yaml.dump(kubeScheduler, width=10000)}
+    kubeScheduler: ${yaml.dump(kubeScheduler, width=10000, default_flow_style=None)}
     % else:
   # kubeScheduler:
   #   featureGates:
   #     SomeKubernetesFeature: true
   % endif
     % if kubeProxy != {}:
-    kubeProxy: ${yaml.dump(kubeProxy, width=10000)}
+    kubeProxy: ${yaml.dump(kubeProxy, width=10000, default_flow_style=None)}
     % else:
   # kubeProxy:
   #   featureGates:
   #     SomeKubernetesFeature: true
+  #   mode: IPVS
   % endif
     % if kubelet != {}:
-    kubelet: ${yaml.dump(kubelet, width=10000)}
+    kubelet: ${yaml.dump(kubelet, width=10000, default_flow_style=None)}
     % else:
   # kubelet:
+  #   podPidsLimit: 10
   #   featureGates:
   #     SomeKubernetesFeature: true
   % endif
   dns:
+<<<<<<< HEAD
     provider: ${value("spec.dns.provider", "aws-route53") if cloud not in  ["local", "metal"] else "unmanaged"}
     domain: ${value("spec.dns.domain", value("metadata.name", "johndoe-" + cloud) + "." + value("metadata.namespace", "garden-dev") + ".example.com") if cloud != "local" else "<minikube-ip>.nip.io"}<% hibernation = value("spec.hibernation", {}) %>
+=======
+  % if cloud != "local":
+  # provider: ${value("spec.dns.provider", "aws-route53")}
+  % else:
+    provider: unmanaged
+  % endif
+    domain: ${value("spec.dns.domain", value("metadata.name", "johndoe-" + cloud) + "." + value("metadata.namespace", "garden-dev") + ".example.com") if cloud != "local" else "<local-kubernetes-ip>.nip.io"}<% hibernation = value("spec.hibernation", {}) %>
+>>>>>>> origin/master
   % if hibernation != {}:
-  hibernation: ${yaml.dump(hibernation, width=10000)}
+  hibernation: ${yaml.dump(hibernation, width=10000, default_flow_style=None)}
   % else:
 # hibernation:
 #   enabled: false
 #   schedules:
 #   - start: "0 20 * * *" # Start hibernation every day at 8PM
 #     end: "0 6 * * *"    # Stop hibernation every day at 6AM
+#     location: "America/Los_Angeles" # Specify a location for the cron to run in
   % endif
   maintenance:
     timeWindow:
@@ -343,11 +428,15 @@ spec:
     maximum: ${value("backup.maximum", "7")}
   % endif
   addons:
+    # nginx-ingress addon is still supported but deprecated.
+    # This field will be removed in the future. You should deploy your own ingress controller
+    # instead of enabling it here. You should not use this field anymore.
     nginx-ingress:
-      enabled: ${value("spec.addons.nginx-ingress.enabled", "true")}
+      enabled: ${value("spec.addons.nginx-ingress.enabled", "false")}
       loadBalancerSourceRanges: ${value("spec.addons.nginx-ingress.loadBalancerSourceRanges", [])}
     kubernetes-dashboard:
       enabled: ${value("spec.addons.kubernetes-dashboard.enabled", "true")}
+    # authenticationMode: basic # allowed values: basic,token
   % if cloud == "aws":
     # kube2iam addon is still supported but deprecated.
     # This field will be removed in the future. You should deploy kube2iam as well as
@@ -357,7 +446,7 @@ spec:
       enabled: ${value("spec.addons.kube2iam.enabled", "true")}
       roles:<% roles=value("spec.addons.kube2iam.roles", []) %>
       % if roles != []:
-      ${yaml.dump(roles, width=10000)}
+      ${yaml.dump(roles, width=10000, default_flow_style=None)}
       % else:
       - name: ecr
         description: "Allow access to ECR repositories beginning with 'my-images/', and creation of new repositories"
@@ -398,7 +487,7 @@ spec:
     # This field will be removed in the future. You should deploy your own kube-lego/cert-manager
     # instead of enabling it here. You should not use this field anymore.
     kube-lego:
-      enabled: ${value("spec.addons.kube-lego.enabled", "true")}
+      enabled: ${value("spec.addons.kube-lego.enabled", "false")}
       email: ${value("spec.addons.kube-lego.email", "john.doe@example.com")}
     # Monocular addon is deprecated and no longer supported.
     # This field will be removed in the future and is only kept for API compatibility reasons. It is not

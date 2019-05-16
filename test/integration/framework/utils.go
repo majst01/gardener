@@ -21,19 +21,18 @@ import (
 	"os"
 	"time"
 
-	"k8s.io/apimachinery/pkg/labels"
-
-	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
-	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
-
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 
 	appsv1 "k8s.io/api/apps/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -106,7 +105,7 @@ func (o *GardenerTestOperation) dashboardAvailable(ctx context.Context, url, use
 }
 
 func (s *ShootGardenerTest) mergePatch(ctx context.Context, oldShoot, newShoot *v1beta1.Shoot) error {
-	patchBytes, err := kubernetesutils.CreateTwoWayMergePatch(oldShoot, newShoot)
+	patchBytes, err := kutil.CreateTwoWayMergePatch(oldShoot, newShoot)
 	if err != nil {
 		return fmt.Errorf("failed to patch bytes")
 	}
@@ -143,21 +142,21 @@ func shootCreationCompleted(newStatus *v1beta1.ShootStatus) bool {
 	}
 
 	for _, condition := range newStatus.Conditions {
-		if condition.Status != gardenv1beta1.ConditionTrue {
+		if condition.Status != gardencorev1alpha1.ConditionTrue {
 			return false
 		}
 	}
 
 	if newStatus.LastOperation != nil {
-		if newStatus.LastOperation.Type == v1beta1.ShootLastOperationTypeCreate ||
-			newStatus.LastOperation.Type == v1beta1.ShootLastOperationTypeReconcile {
-			if newStatus.LastOperation.State != v1beta1.ShootLastOperationStateSucceeded {
+		if newStatus.LastOperation.Type == gardencorev1alpha1.LastOperationTypeCreate ||
+			newStatus.LastOperation.Type == gardencorev1alpha1.LastOperationTypeReconcile {
+			if newStatus.LastOperation.State != gardencorev1alpha1.LastOperationStateSucceeded {
 				return false
 			}
 		}
 	}
-	return true
 
+	return true
 }
 
 func getObjectFromSecret(ctx context.Context, k8sClient kubernetes.Interface, namespace, secretName, objectKey string) (string, error) {
@@ -182,4 +181,42 @@ func Exists(path string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// plantCreationSuccessful determines, based on the plant condition and Cluster Info, if the Plant was reconciled successfully
+func plantCreationSuccessful(plantStatus *gardencorev1alpha1.PlantStatus) bool {
+	if len(plantStatus.Conditions) == 0 {
+		return false
+	}
+
+	for _, condition := range plantStatus.Conditions {
+		if condition.Status != gardencorev1alpha1.ConditionTrue {
+			return false
+		}
+	}
+
+	if len(plantStatus.ClusterInfo.Kubernetes.Version) == 0 || len(plantStatus.ClusterInfo.Cloud.Type) == 0 || len(plantStatus.ClusterInfo.Cloud.Region) == 0 {
+		return false
+	}
+
+	return true
+}
+
+// plantReconciledWithStatusUnknown determines, based on the plant status.condition and status.ClusterInfo, if the PlantStatus is 'unknown'
+func plantReconciledWithStatusUnknown(plantStatus *gardencorev1alpha1.PlantStatus) bool {
+	if len(plantStatus.Conditions) == 0 {
+		return false
+	}
+
+	for _, condition := range plantStatus.Conditions {
+		if condition.Status != gardencorev1alpha1.ConditionFalse && condition.Status != gardencorev1alpha1.ConditionUnknown {
+			return false
+		}
+	}
+
+	if len(plantStatus.ClusterInfo.Kubernetes.Version) != 0 || len(plantStatus.ClusterInfo.Cloud.Type) != 0 && len(plantStatus.ClusterInfo.Cloud.Region) != 0 {
+		return false
+	}
+
+	return true
 }

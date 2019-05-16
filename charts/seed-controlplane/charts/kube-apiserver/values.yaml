@@ -17,6 +17,12 @@ featureGates: {}
   # RotateKubeletServerCertificate: false
 runtimeConfig: {}
   # autoscaling/v2alpha1: true
+environment: []
+
+# Needed due to https://github.com/kubernetes/kubernetes/pull/73102
+cloudProvider: ""
+enableCSI: false
+seedCloudProvider: ""
 
 oidcConfig: {}
   # caBundle: |
@@ -77,3 +83,6 @@ targetAverageUtilization: 80
 
 auditConfig:
   auditPolicy: ""
+
+vpa:
+  enabled: true

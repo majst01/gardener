@@ -15,10 +15,8 @@
 package config
 
 import (
-	// TODO: Should be k8s.io/component-base/config in the future.
-	apimachineryconfig "k8s.io/apimachinery/pkg/apis/config"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1" // TODO: Should be k8s.io/component-base/config in the future.
-	apiserverconfig "k8s.io/apiserver/pkg/apis/config"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	componentbaseconfig "k8s.io/component-base/config"
 	"k8s.io/klog"
 )
 
@@ -29,15 +27,13 @@ type ControllerManagerConfiguration struct {
 	metav1.TypeMeta
 	// ClientConnection specifies the kubeconfig file and client connection
 	// settings for the proxy server to use when communicating with the gardener-apiserver.
-	ClientConnection apimachineryconfig.ClientConnectionConfiguration
-	// GardenerClientConnection specifies the kubeconfig file and client connection
-	// settings for the garden-apiserver.
-	// +optional
-	GardenerClientConnection *apimachineryconfig.ClientConnectionConfiguration
+	ClientConnection componentbaseconfig.ClientConnectionConfiguration
 	// Controllers defines the configuration of the controllers.
 	Controllers ControllerManagerControllerConfiguration
 	// LeaderElection defines the configuration of leader election client.
 	LeaderElection LeaderElectionConfiguration
+	// Discovery defines the configuration of the discovery client.
+	Discovery DiscoveryConfiguration
 	// LogLevel is the level/severity for the logs. Must be one of [info,debug,error].
 	LogLevel string
 	// KubernetesLogLevel is the log level used for Kubernetes' k8s.io/klog functions.
@@ -66,6 +62,9 @@ type ControllerManagerControllerConfiguration struct {
 	// ControllerInstallation defines the configuration of the ControllerInstallation controller.
 	// +optional
 	ControllerInstallation *ControllerInstallationControllerConfiguration
+	// Plant defines the configuration of the Plant controller.
+	// +optional
+	Plant *PlantConfiguration
 	// SecretBinding defines the configuration of the SecretBinding controller.
 	// +optional
 	SecretBinding *SecretBindingControllerConfiguration
@@ -112,6 +111,16 @@ type ControllerInstallationControllerConfiguration struct {
 	// ConcurrentSyncs is the number of workers used for the controller to work on
 	// events.
 	ConcurrentSyncs int
+}
+
+// PlantConfiguration defines the configuration of the
+// PlantConfiguration controller.
+type PlantConfiguration struct {
+	// ConcurrentSyncs is the number of workers used for the controller to work on
+	// events.
+	ConcurrentSyncs int
+	// SyncPeriod is the duration how often the existing resources are reconciled.
+	SyncPeriod metav1.Duration
 }
 
 // SecretBindingControllerConfiguration defines the configuration of the
@@ -237,10 +246,26 @@ type BackupInfrastructureControllerConfiguration struct {
 	DeletionGracePeriodDays *int
 }
 
+// DiscoveryConfiguration defines the configuration of how to discover API groups.
+// It allows to set where to store caching data and to specify the TTL of that data.
+type DiscoveryConfiguration struct {
+	// DiscoveryCacheDir is the directory to store discovery cache information.
+	// If unset, the discovery client will use the current working directory.
+	// +optional
+	DiscoveryCacheDir *string
+	// HTTPCacheDir is the directory to store discovery HTTP cache information.
+	// If unset, no HTTP caching will be done.
+	// +optional
+	HTTPCacheDir *string
+	// TTL is the ttl how long discovery cache information shall be valid.
+	// +optional
+	TTL *metav1.Duration
+}
+
 // LeaderElectionConfiguration defines the configuration of leader election
 // clients for components that can run with leader election enabled.
 type LeaderElectionConfiguration struct {
-	apiserverconfig.LeaderElectionConfiguration
+	componentbaseconfig.LeaderElectionConfiguration
 	// LockObjectNamespace defines the namespace of the lock object.
 	LockObjectNamespace string
 	// LockObjectName defines the lock object name.

@@ -23,15 +23,13 @@ The implementation consists of several parts:
     2. Create a machine class template for the cloud provider as `<provider>-machineclass/templates/<provider>-machineclass.yaml`
     3. Create default values for the cloud provider as `<provider>-machineclass/values.yaml`
 4. Create config files for the seed terraformer charts in [charts/seed-terraformer/charts/](../../charts/seed-terraformer/charts/):
-    1. If your provider supports DNS and you want to implement it in Gardener, create the template in `<provider>-dns/templates/_main.tf`
-    2. If DNS is available, create the default values in `<provider>-dns/values.yaml`
-    3. Create common infrastructure chart as `<provider>-infra/Chart.yaml`
-    4. Create the main infrastructure template as `<provider>-infra/templates/_main.tf`
-    5. Create terraform values template as `<provider>-infra/templates/_terraform.tfvars`
-    6. Create the terraform variables template as `<provider>-infra/templates/_variables.tf`
-    7. Create the `config.yaml` to include the common config as `<provider>-infra/templates/config.yaml`
-    8. Create the default values as `<provider>-infra/values.yaml`
-    9. Add a symlink from `<provider>-infra/charts/terraformer-common` to `../../terraformer-common`
+    1. Create common infrastructure chart as `<provider>-infra/Chart.yaml`
+    2. Create the main infrastructure template as `<provider>-infra/templates/_main.tf`
+    3. Create terraform values template as `<provider>-infra/templates/_terraform.tfvars`
+    4. Create the terraform variables template as `<provider>-infra/templates/_variables.tf`
+    5. Create the `config.yaml` to include the common config as `<provider>-infra/templates/config.yaml`
+    6. Create the default values as `<provider>-infra/values.yaml`
+    7. Add a symlink from `<provider>-infra/charts/terraformer-common` to `../../terraformer-common`
 5. If your cloud provider's volume provisioner is not in-tree for Kubernetes, and thus requires usage of a container storage interface (CSI) provider, perform this step:
     1. Create a CSI chart for your cloud provider in [charts/shoot-core/charts/](../../charts/shoot-core/charts/) named `csi-<provider>`
     2. Populate the chart with the `yaml` files necessary to use CSI for your cloud provider. See existing examples. You must provide the _entire_ CSI uplift, including the common attacher and provisioner, as well as your cloud provider's specific plugin.
@@ -49,16 +47,16 @@ The implementation consists of several parts:
 ### Golang code
 
 1. If necessary, add support for your cloud provider libraries to [Gopkg.toml](../../Gopkg.toml), and run `make revendor`. 
-2. Add a `case` for your cloud provider as `case gardenv1beta1.CloudProvider<Provider>` to `GetShootCloudProviderWorkers()` in [pkg/apis/garden/v1beta1/helper/helpers.go](../../pkg/apis/garden/v1beta1/helper/helpers.go)
+2. Update [pkg/apis/garden/v1beta1/helper/helpers.go](../../pkg/apis/garden/v1beta1/helper/helpers.go) as follows:
+    * Add a `case` for your cloud provider as `case gardenv1beta1.CloudProvider<Provider>` to `GetShootCloudProviderWorkers()`
+    * Add a `case` for your cloud provider as `case gardenv1beta1.CloudProvider<Provider>` to `DetermineMachineImage()`
 3. If your cloud provider SDK uses a persistent client object, Create a client implementation for the provider at [pkg/client/](../../pkg/client/) named `pkg/client/<provider>/`. This client will only be used by code that you will implement in the following steps, so it can follow any convention you want. However, by normal convention, it uses the following standard:
     * Main entry file `client.go`
     * Any types defined in `types.go`
-4. Add a `case` for your cloud provider as `case gardenv1beta1.CloudProvider<Provider>` to `Maintain()` in [pkg/controller/shoot/shoot\_maintenance\_control.go](../../pkg/controller/shoot/shoot_maintenance_control.go)
-5. Create a cloud botanist implementation for the cloud provider at [pkg/operation/cloudbotanist/](../../pkg/operation/cloudbotanist/) named `<provider>botanist/`. The botanist will be used for primary interfacing with the cloud provider. It should follow these conventions:
+4. Create a cloud botanist implementation for the cloud provider at [pkg/operation/cloudbotanist/](../../pkg/operation/cloudbotanist/) named `<provider>botanist/`. The botanist will be used for primary interfacing with the cloud provider. It should follow these conventions:
     * The primary entrypoint to create a new instance is `<provider>botanist.New(o *operation.Operation, purpose string)`, and will be called by `cloudbotanist.go`
     * `New()` is expected to return a `struct` that implements the `CloudBotanist interface` defined in [pkg/operation/cloudbotanist/types.go](../../pkg/operation/cloudbotanist/types.go)
-6. Consume the cloud botanist implementation you created in the previous step by adding a `case gardenv1beta1.CloudProvider<Provider>` to the `func New()` in [pkg/operation/cloudbotanist/cloudbotanist.go](../../pkg/operation/cloudbotanist/cloudbotanist.go)
-7. Update [pkg/operation/shoot/shoot.go](../../pkg/operation/shoot/shoot.go) to include the following:
+5. Consume the cloud botanist implementation you created in the previous step by adding a `case gardenv1beta1.CloudProvider<Provider>` to the `func New()` in [pkg/operation/cloudbotanist/cloudbotanist.go](../../pkg/operation/cloudbotanist/cloudbotanist.go)
+6. Update [pkg/operation/shoot/shoot.go](../../pkg/operation/shoot/shoot.go) to include the following:
     * Add a `case gardenv1beta1.CloudProvider<Provider>` to `GetK8SNetworks()` to return a proper `K8SNetworks` reference for the provider
-    * Add a `case gardenv1beta1.CloudProvider<Provider>` to `GetMachineImageName()` to return the `MachineImage.Name` for the provider
 

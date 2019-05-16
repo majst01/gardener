@@ -9,7 +9,6 @@ metadata:
     chart: {{ template "kubernetes-dashboard.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
-    kubernetes.io/cluster-service: "true"
     addonmanager.kubernetes.io/mode: Reconcile
     origin: gardener
 spec:
@@ -21,7 +20,6 @@ spec:
       heritage: "{{ .Release.Service }}"
       release: "{{ .Release.Name }}"
       chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
-      kubernetes.io/cluster-service: "true"
   strategy:
     rollingUpdate:
       maxSurge: 0
@@ -38,8 +36,10 @@ spec:
         heritage: "{{ .Release.Service }}"
         release: "{{ .Release.Name }}"
         chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
-        kubernetes.io/cluster-service: "true"
     spec:
+      securityContext:
+        runAsUser: 65534
+        fsGroup: 65534
       serviceAccountName: {{ template "kubernetes-dashboard.fullname" . }}
       containers:
       - name: {{ .Chart.Name }}
@@ -47,7 +47,7 @@ spec:
         imagePullPolicy: {{ .Values.imagePullPolicy }}
         args:
           - --auto-generate-certificates
-          - --authentication-mode=basic
+          - --authentication-mode={{ .Values.authenticationMode }}
 {{- if .Values.extraArgs }}
 {{ toYaml .Values.extraArgs | indent 10 }}
 {{- end }}

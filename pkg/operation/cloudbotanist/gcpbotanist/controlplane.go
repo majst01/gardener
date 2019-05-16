@@ -19,12 +19,14 @@ import (
 	"path"
 
 	"github.com/gardener/gardener/pkg/operation/common"
+	"github.com/gardener/gardener/pkg/operation/terraformer"
 )
 
 const cloudProviderConfigTemplate = `
 [Global]
 project-id=%q
 network-name=%q
+%v
 multizone=true
 local-zone=%q
 token-url=nil
@@ -40,10 +42,28 @@ func (b *GCPBotanist) GenerateCloudProviderConfig() (string, error) {
 		networkName = b.Shoot.SeedNamespace
 	}
 
+	var (
+		subnetID       = "subnet_internal"
+		subNetworkName = ""
+	)
+	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
+	if err != nil {
+		return "", err
+	}
+	stateVariables, err := tf.GetStateOutputVariables(subnetID)
+	if err != nil {
+		if !terraformer.IsVariablesNotFoundError(err) {
+			return "", err
+		}
+		b.Logger.Debugf("Skipping explicit GCP subnet creation for internal loadbalancers because subnet_internal variable has not been found in the Terraform state.")
+	} else {
+		subNetworkName = fmt.Sprintf("subnetwork-name=%q", stateVariables[subnetID])
+	}
 	return fmt.Sprintf(
 		cloudProviderConfigTemplate,
 		b.Project,
 		networkName,
+		subNetworkName,
 		b.Shoot.Info.Spec.Cloud.GCP.Zones[0],
 		b.Shoot.SeedNamespace,
 	), nil
@@ -74,7 +94,9 @@ func (b *GCPBotanist) GenerateKubeAPIServerExposeConfig() (map[string]interface{
 // GenerateKubeAPIServerConfig generates the cloud provider specific values which are required to render the
 // Deployment manifest of the kube-apiserver properly.
 func (b *GCPBotanist) GenerateKubeAPIServerConfig() (map[string]interface{}, error) {
-	return nil, nil
+	return map[string]interface{}{
+		"environment": getGCPCredentialsEnvironment(),
+	}, nil
 }
 
 // GenerateCloudControllerManagerConfig generates the cloud provider specific values which are required to
@@ -112,6 +134,18 @@ func getGCPCredentialsEnvironment() []map[string]interface{} {
 // Deployment manifest of the kube-scheduler properly.
 func (b *GCPBotanist) GenerateKubeSchedulerConfig() (map[string]interface{}, error) {
 	return nil, nil
+}
+
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *GCPBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "25Gi",
+		"provisioner": "kubernetes.io/gce-pd",
+		"parameters": map[string]interface{}{
+			"type": "pd-ssd",
+		},
+	}
 }
 
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.

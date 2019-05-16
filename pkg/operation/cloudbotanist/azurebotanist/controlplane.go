@@ -82,6 +82,17 @@ func (b *AzureBotanist) GenerateCloudProviderConfig() (string, error) {
 		string(b.Shoot.Secret.Data[ClientSecret]),
 	)
 
+	// https://github.com/kubernetes/kubernetes/pull/70866
+	wantsV2BackoffMode, err := utils.CheckVersionMeetsConstraint(b.Shoot.Info.Spec.Kubernetes.Version, ">= 1.14")
+	if err != nil {
+		return "", err
+	}
+
+	if wantsV2BackoffMode {
+		cloudProviderConfig += fmt.Sprintf(`
+cloudProviderBackoffMode: v2`)
+	}
+
 	return cloudProviderConfig, nil
 }
 
@@ -163,6 +174,19 @@ func (b *AzureBotanist) GenerateKubeControllerManagerConfig() (map[string]interf
 // Deployment manifest of the kube-scheduler properly.
 func (b *AzureBotanist) GenerateKubeSchedulerConfig() (map[string]interface{}, error) {
 	return nil, nil
+}
+
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *AzureBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "33Gi",
+		"provisioner": "kubernetes.io/azure-disk",
+		"parameters": map[string]interface{}{
+			"storageaccounttype": "Premium_LRS",
+			"kind":               "managed",
+		},
+	}
 }
 
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.

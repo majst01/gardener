@@ -15,11 +15,14 @@
 package operation
 
 import (
+	"context"
 	"crypto/x509"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gardener/gardener/pkg/utils/chart"
 
 	"github.com/gardener/gardener/pkg/operation/terraformer"
 
@@ -78,7 +81,7 @@ func newOperation(
 		secrets[k] = v
 	}
 
-	gardenObj, err := garden.New(k8sGardenInformers.Projects().Lister(), namespace)
+	gardenObj, err := garden.New(k8sGardenInformers.Projects().Lister(), namespace, secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +90,11 @@ func newOperation(
 		return nil, err
 	}
 
-	chartRenderer, err := chartrenderer.New(k8sGardenClient.Kubernetes())
+	renderer, err := chartrenderer.NewForConfig(k8sGardenClient.RESTConfig())
+	if err != nil {
+		return nil, err
+	}
+	applier, err := kubernetes.NewApplierForConfig(k8sGardenClient.RESTConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -102,20 +109,20 @@ func newOperation(
 		Seed:                 seedObj,
 		K8sGardenClient:      k8sGardenClient,
 		K8sGardenInformers:   k8sGardenInformers,
-		ChartGardenRenderer:  chartRenderer,
+		ChartApplierGarden:   kubernetes.NewChartApplier(renderer, applier),
 		BackupInfrastructure: backupInfrastructure,
 		ShootBackup:          shootBackup,
 		MachineDeployments:   MachineDeployments{},
 	}
 
 	if shoot != nil {
-		internalDomain := constructInternalDomain(shoot.Name, gardenObj.Project.Name, secretsMap[common.GardenRoleInternalDomain].Annotations[common.DNSDomain])
-		shootObj, err := shootpkg.New(k8sGardenClient, k8sGardenInformers, shoot, gardenObj.Project.Name, internalDomain)
+		shootObj, err := shootpkg.New(k8sGardenClient, k8sGardenInformers, shoot, gardenObj.Project.Name, gardenObj.InternalDomain.Domain, gardenObj.DefaultDomains)
 		if err != nil {
 			return nil, err
 		}
 		operation.Shoot = shootObj
-		operation.Shoot.WantsAlertmanager = helper.ShootWantsAlertmanager(shoot, secrets)
+		operation.Shoot.IgnoreAlerts = helper.ShootIgnoreAlerts(shoot)
+		operation.Shoot.WantsAlertmanager = helper.ShootWantsAlertmanager(shoot, secrets) && !operation.Shoot.IgnoreAlerts
 
 		shootedSeed, err := helper.ReadShootedSeed(shoot)
 		if err != nil {
@@ -133,7 +140,7 @@ func newOperation(
 // a Kubernetes client as well as a Chart renderer for the Seed cluster will be initialized and attached to
 // the already existing Operation object.
 func (o *Operation) InitializeSeedClients() error {
-	if o.K8sSeedClient != nil && o.ChartSeedRenderer != nil {
+	if o.K8sSeedClient != nil && o.ChartApplierSeed != nil {
 		return nil
 	}
 
@@ -143,12 +150,18 @@ func (o *Operation) InitializeSeedClients() error {
 	if err != nil {
 		return err
 	}
-
 	o.K8sSeedClient = k8sSeedClient
-	o.ChartSeedRenderer, err = chartrenderer.New(k8sSeedClient.Kubernetes())
+
+	renderer, err := chartrenderer.NewForConfig(k8sSeedClient.RESTConfig())
 	if err != nil {
 		return err
 	}
+	applier, err := kubernetes.NewApplierForConfig(k8sSeedClient.RESTConfig())
+	if err != nil {
+		return err
+	}
+
+	o.ChartApplierSeed = kubernetes.NewChartApplier(renderer, applier)
 	return nil
 }
 
@@ -157,8 +170,19 @@ func (o *Operation) InitializeSeedClients() error {
 // a Kubernetes client as well as a Chart renderer for the Shoot cluster will be initialized and attached to
 // the already existing Operation object.
 func (o *Operation) InitializeShootClients() error {
-	if o.K8sShootClient != nil && o.ChartShootRenderer != nil {
+	if o.K8sShootClient != nil && o.ChartApplierShoot != nil {
 		return nil
+	}
+
+	if o.Shoot.IsHibernated {
+		controlPlaneHibernated, err := o.controlPlaneHibernated()
+		if err != nil {
+			return err
+		}
+		// Do not initialize Shoot clients for already hibernated shoots.
+		if controlPlaneHibernated {
+			return nil
+		}
 	}
 
 	k8sShootClient, err := kubernetes.NewClientFromSecret(o.K8sSeedClient, o.Shoot.SeedNamespace, gardenv1beta1.GardenerName, client.Options{
@@ -167,13 +191,30 @@ func (o *Operation) InitializeShootClients() error {
 	if err != nil {
 		return err
 	}
-
 	o.K8sShootClient = k8sShootClient
-	o.ChartShootRenderer, err = chartrenderer.New(k8sShootClient.Kubernetes())
+
+	renderer, err := chartrenderer.NewForConfig(k8sShootClient.RESTConfig())
 	if err != nil {
 		return err
 	}
+	applier, err := kubernetes.NewApplierForConfig(k8sShootClient.RESTConfig())
+	if err != nil {
+		return err
+	}
+
+	o.ChartApplierShoot = kubernetes.NewChartApplier(renderer, applier)
 	return nil
+}
+
+func (o *Operation) controlPlaneHibernated() (bool, error) {
+	replicaCount, err := common.CurrentReplicaCount(o.K8sSeedClient.Client(), o.Shoot.SeedNamespace, common.KubeAPIServerDeploymentName)
+	if err != nil {
+		return false, err
+	}
+	if replicaCount > 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 //ComputePrometheusIngressFQDN computes full qualified domain name for prometheus ingress sub-resource and returns it.
@@ -209,7 +250,7 @@ func (o *Operation) InitializeMonitoringClient() error {
 	config := prometheusapi.Config{
 		Address: fmt.Sprintf("https://%s", o.ComputePrometheusIngressFQDN()),
 		RoundTripper: &prometheusRoundTripper{
-			authHeader: fmt.Sprintf("Basic %s", utils.EncodeBase64([]byte(fmt.Sprintf("%s:%s", credentials.Data["username"], credentials.Data["password"])))),
+			authHeader: fmt.Sprintf("Basic %s", utils.EncodeBase64([]byte(fmt.Sprintf("%s:%s", credentials.Data[secrets.DataKeyUserName], credentials.Data[secrets.DataKeyPassword])))),
 			ca:         ca,
 		},
 	}
@@ -224,22 +265,15 @@ func (o *Operation) InitializeMonitoringClient() error {
 // ApplyChartGarden takes a path to a chart <chartPath>, name of the release <name>, release's namespace <namespace>
 // and two maps <defaultValues>, <additionalValues>, and renders the template based on the merged result of both value maps.
 // The resulting manifest will be applied to the Garden cluster.
-func (o *Operation) ApplyChartGarden(chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}) error {
-	return common.ApplyChart(o.K8sGardenClient, o.ChartGardenRenderer, chartPath, name, namespace, defaultValues, additionalValues)
+func (o *Operation) ApplyChartGarden(chartPath, namespace, name string, defaultValues, additionalValues map[string]interface{}) error {
+	return o.ChartApplierGarden.ApplyChart(context.TODO(), chartPath, namespace, name, defaultValues, additionalValues)
 }
 
 // ApplyChartSeed takes a path to a chart <chartPath>, name of the release <name>, release's namespace <namespace>
 // and two maps <defaultValues>, <additionalValues>, and renders the template based on the merged result of both value maps.
 // The resulting manifest will be applied to the Seed cluster.
-func (o *Operation) ApplyChartSeed(chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}) error {
-	return common.ApplyChart(o.K8sSeedClient, o.ChartSeedRenderer, chartPath, name, namespace, defaultValues, additionalValues)
-}
-
-// ApplyChartShoot takes a path to a chart <chartPath>, name of the release <name>, release's namespace <namespace>
-// and two maps <defaultValues>, <additionalValues>, and renders the template based on the merged result of both value maps.
-// The resulting manifest will be applied to the Shoot cluster.
-func (o *Operation) ApplyChartShoot(chartPath, name, namespace string, defaultValues, additionalValues map[string]interface{}) error {
-	return common.ApplyChart(o.K8sShootClient, o.ChartShootRenderer, chartPath, name, namespace, defaultValues, additionalValues)
+func (o *Operation) ApplyChartSeed(chartPath, namespace, name string, defaultValues, additionalValues map[string]interface{}) error {
+	return o.ChartApplierSeed.ApplyChart(context.TODO(), chartPath, namespace, name, defaultValues, additionalValues)
 }
 
 // GetSecretKeysOfRole returns a list of keys which are present in the Garden Secrets map and which
@@ -297,29 +331,6 @@ func (o *Operation) ReportBackupInfrastructureProgress(stats *flow.Stats) {
 	}
 }
 
-// InjectImages injects images from the image vector into the provided <values> map.
-func (o *Operation) InjectImages(values map[string]interface{}, k8sVersionRuntime, k8sVersionTarget string, images ...string) (map[string]interface{}, error) {
-	var (
-		copy = make(map[string]interface{})
-		i    = make(map[string]interface{})
-	)
-
-	for k, v := range values {
-		copy[k] = v
-	}
-
-	for _, imageName := range images {
-		image, err := o.ImageVector.FindImage(imageName, k8sVersionRuntime, k8sVersionTarget)
-		if err != nil {
-			return nil, err
-		}
-		i[imageName] = image.String()
-	}
-
-	copy["images"] = i
-	return copy, nil
-}
-
 // SeedVersion is a shorthand for the kubernetes version of the K8sSeedClient.
 func (o *Operation) SeedVersion() string {
 	return o.K8sSeedClient.Version()
@@ -330,8 +341,27 @@ func (o *Operation) ShootVersion() string {
 	return o.Shoot.Info.Spec.Kubernetes.Version
 }
 
+func (o *Operation) injectImages(values map[string]interface{}, names []string, opts ...imagevector.FindOptionFunc) (map[string]interface{}, error) {
+	return chart.InjectImages(values, o.ImageVector, names, opts...)
+}
+
+// InjectSeedSeedImages injects images that shall run on the Seed and target the Seed's Kubernetes version.
+func (o *Operation) InjectSeedSeedImages(values map[string]interface{}, names ...string) (map[string]interface{}, error) {
+	return o.injectImages(values, names, imagevector.RuntimeVersion(o.SeedVersion()), imagevector.TargetVersion(o.SeedVersion()))
+}
+
+// InjectSeedShootImages injects images that shall run on the Seed but target the Shoot's Kubernetes version.
+func (o *Operation) InjectSeedShootImages(values map[string]interface{}, names ...string) (map[string]interface{}, error) {
+	return o.injectImages(values, names, imagevector.RuntimeVersion(o.SeedVersion()), imagevector.TargetVersion(o.ShootVersion()))
+}
+
+// InjectShootShootImages injects images that shall run on the Shoot and target the Shoot's Kubernetes version.
+func (o *Operation) InjectShootShootImages(values map[string]interface{}, names ...string) (map[string]interface{}, error) {
+	return o.injectImages(values, names, imagevector.RuntimeVersion(o.ShootVersion()), imagevector.TargetVersion(o.ShootVersion()))
+}
+
 func (o *Operation) newTerraformer(purpose, namespace, name string) (*terraformer.Terraformer, error) {
-	image, err := o.ImageVector.FindImage(common.TerraformerImageName, o.K8sSeedClient.Version(), o.K8sSeedClient.Version())
+	image, err := o.ImageVector.FindImage(common.TerraformerImageName, imagevector.RuntimeVersion(o.K8sSeedClient.Version()), imagevector.TargetVersion(o.K8sSeedClient.Version()))
 	if err != nil {
 		return nil, err
 	}
@@ -359,10 +389,15 @@ func (o *Operation) NewShootTerraformer(purpose string) (*terraformer.Terraforme
 // ChartInitializer initializes a terraformer based on the given chart and values.
 func (o *Operation) ChartInitializer(chartName string, values map[string]interface{}) terraformer.Initializer {
 	return func(config *terraformer.InitializerConfig) error {
-		chartRenderer, err := chartrenderer.New(o.K8sSeedClient.Kubernetes())
+		chartRenderer, err := chartrenderer.NewForConfig(o.K8sSeedClient.RESTConfig())
 		if err != nil {
 			return err
 		}
+		applier, err := kubernetes.NewApplierForConfig(o.K8sSeedClient.RESTConfig())
+		if err != nil {
+			return err
+		}
+		chartApplier := kubernetes.NewChartApplier(chartRenderer, applier)
 
 		values["names"] = map[string]interface{}{
 			"configuration": config.ConfigurationName,
@@ -372,25 +407,12 @@ func (o *Operation) ChartInitializer(chartName string, values map[string]interfa
 		values["initializeEmptyState"] = config.InitializeState
 
 		return utils.Retry(5*time.Second, 30*time.Second, func() (bool, bool, error) {
-			if err := common.ApplyChart(o.K8sSeedClient, chartRenderer, filepath.Join(common.TerraformerChartPath, chartName), chartName, config.Namespace, nil, values); err != nil {
+			if err := chartApplier.ApplyChart(context.TODO(), filepath.Join(common.TerraformerChartPath, chartName), config.Namespace, chartName, nil, values); err != nil {
 				return false, false, nil
 			}
 			return true, false, nil
 		})
 	}
-}
-
-// constructInternalDomain constructs the domain pointing to the kube-apiserver of a Shoot cluster
-// which is only used for internal purposes (all kubeconfigs except the one which is received by the
-// user will only talk with the kube-apiserver via this domain). In case the given <internalDomain>
-// already contains "internal", the result is constructed as "api.<shootName>.<shootProject>.<internalDomain>."
-// In case it does not, the word "internal" will be appended, resulting in
-// "api.<shootName>.<shootProject>.internal.<internalDomain>".
-func constructInternalDomain(shootName, shootProject, internalDomain string) string {
-	if strings.Contains(internalDomain, common.InternalDomainKey) {
-		return fmt.Sprintf("api.%s.%s.%s", shootName, shootProject, internalDomain)
-	}
-	return fmt.Sprintf("api.%s.%s.%s.%s", shootName, shootProject, common.InternalDomainKey, internalDomain)
 }
 
 // ContainsName checks whether the <name> is part of the <machineDeployments>

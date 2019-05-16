@@ -16,6 +16,7 @@ package main
 
 import (
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
+	"github.com/gardener/gardener/pkg/operation/common"
 )
 
 // updateWorkerZone updates the zone of the workers.
@@ -91,4 +92,26 @@ func updateAutoscalerMinMax(shoot *gardenv1beta1.Shoot, cloudprovider gardenv1be
 			testLogger.Warnf("unsupported cloudprovider %s", cloudprovider)
 		}
 	}
+}
+
+// updateFloatingPoolName updates the floatingPoolName if an openstack cluster is created.
+func updateFloatingPoolName(shoot *gardenv1beta1.Shoot, floatingPoolName string, cloudprovider gardenv1beta1.CloudProvider) {
+	if cloudprovider == gardenv1beta1.CloudProviderOpenStack {
+		shoot.Spec.Cloud.OpenStack.FloatingPoolName = floatingPoolName
+	}
+}
+
+// updateLoadBalancerProvider updates the loadBalancerProvider if an openstack cluster is created.
+func updateLoadBalancerProvider(shoot *gardenv1beta1.Shoot, loadBalancerProvider string, cloudprovider gardenv1beta1.CloudProvider) {
+	if cloudprovider == gardenv1beta1.CloudProviderOpenStack && loadBalancerProvider != "" {
+		shoot.Spec.Cloud.OpenStack.LoadBalancerProvider = loadBalancerProvider
+	}
+}
+
+// updateAnnotations adds default annotations that should be present on any shoot created.
+func updateAnnotations(shoot *gardenv1beta1.Shoot) {
+	if shoot.Annotations == nil {
+		shoot.Annotations = map[string]string{}
+	}
+	shoot.Annotations[common.GardenIgnoreAlerts] = "true"
 }

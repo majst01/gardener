@@ -15,10 +15,12 @@
 package shoot
 
 import (
+	"context"
 	"time"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
+	gardencorev1alpha1helper "github.com/gardener/gardener/pkg/apis/core/v1alpha1/helper"
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
-	"github.com/gardener/gardener/pkg/apis/garden/v1beta1/helper"
 	"github.com/gardener/gardener/pkg/operation"
 	botanistpkg "github.com/gardener/gardener/pkg/operation/botanist"
 	cloudbotanistpkg "github.com/gardener/gardener/pkg/operation/cloudbotanist"
@@ -26,8 +28,9 @@ import (
 	hybridbotanistpkg "github.com/gardener/gardener/pkg/operation/hybridbotanist"
 	"github.com/gardener/gardener/pkg/utils"
 	"github.com/gardener/gardener/pkg/utils/flow"
-	"github.com/gardener/gardener/pkg/utils/kubernetes"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +41,7 @@ import (
 
 // deleteShoot deletes a Shoot cluster entirely.
 // It receives a Garden object <garden> which stores the Shoot object.
-func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.LastError {
+func (c *defaultControl) deleteShoot(o *operation.Operation) *gardencorev1alpha1.LastError {
 	// If the .status.uid field is empty, then we assume that there has never been any operation running for this Shoot
 	// cluster. This implies that there can not be any resource which we have to delete. We accept the deletion.
 	if len(o.Shoot.Info.Status.UID) == 0 {
@@ -58,7 +61,7 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 		return formatError("Failed to create a Botanist", err)
 	}
 
-	if err := botanist.RequiredExtensionsExist(o.Shoot.Info); err != nil {
+	if err := botanist.RequiredExtensionsExist(); err != nil {
 		return formatError("Failed to check whether all required extensions exist", err)
 	}
 
@@ -86,32 +89,42 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 		return formatError("Failed to create a HybridBotanist", err)
 	}
 
-	// We check whether the Shoot namespace in the Seed cluster is already in a terminating state, i.e. whether
-	// we have tried to delete it in a previous run. In that case, we do not need to cleanup Shoot resource because
+	// We check whether the shoot namespace in the seed cluster is already in a terminating state, i.e. whether
+	// we have tried to delete it in a previous run. In that case, we do not need to cleanup shoot resource because
 	// that would have already been done.
-	// We also check whether the kube-apiserver pod exists in the Shoot namespace within the Seed cluster. If it does not,
-	// then we assume that it has never been deployed successfully. We follow that no resources can have been deployed
-	// at all in the Shoot cluster, thus there is nothing to delete at all.
-	kubeAPIServerFound := false
-	podList, err := botanist.K8sSeedClient.ListPods(o.Shoot.SeedNamespace, metav1.ListOptions{
-		LabelSelector: "app=kubernetes,role=apiserver",
-	})
-	if err != nil {
-		return formatError("Failed to retrieve the list of pods running in the Shoot namespace in the Seed cluster", err)
-	}
-	for _, pod := range podList.Items {
-		if pod.DeletionTimestamp == nil {
-			kubeAPIServerFound = true
-			break
+	// We also check whether the kube-apiserver deployment exists in the shoot namespace. If it does not, then we assume
+	// that it has never been deployed successfully, or that we have deleted it in a previous run because we already
+	// cleaned up. We follow that no (more) resources can have been deployed in the shoot cluster, thus there is nothing
+	// to delete anymore.
+	kubeAPIServerDeploymentFound := true
+	if err := botanist.K8sSeedClient.Client().Get(context.TODO(), kutil.Key(o.Shoot.SeedNamespace, common.KubeAPIServerDeploymentName), &appsv1.Deployment{}); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return formatError("Failed to retrieve the kube-apiserver deployment in the shoot namespace in the seed cluster", err)
 		}
+		kubeAPIServerDeploymentFound = false
+	}
+
+	internalDNSMigrationNeeded, err := c.needsDNSMigration(o, common.TerraformerPurposeInternalDNSDeprecated)
+	if err != nil {
+		return formatError("Failed to check whether internal DNS migration is needed", err)
+	}
+	externalDNSMigrationNeeded, err := c.needsDNSMigration(o, common.TerraformerPurposeExternalDNSDeprecated)
+	if err != nil {
+		return formatError("Failed to check whether external DNS migration is needed", err)
+	}
+	ingressDNSMigrationNeeded, err := c.needsDNSMigration(o, common.TerraformerPurposeIngressDNSDeprecated)
+	if err != nil {
+		return formatError("Failed to check whether ingress DNS migration is needed", err)
 	}
 
 	var (
 		nonTerminatingNamespace = namespace.Status.Phase != corev1.NamespaceTerminating
-		cleanupShootResources   = nonTerminatingNamespace && kubeAPIServerFound
+		cleanupShootResources   = nonTerminatingNamespace && kubeAPIServerDeploymentFound
 		defaultInterval         = 5 * time.Second
 		defaultTimeout          = 30 * time.Second
 		isCloud                 = o.Shoot.Info.Spec.Cloud.Local == nil
+		managedExternalDNS      = o.Shoot.ExternalDomain != nil && o.Shoot.ExternalDomain.Provider != gardenv1beta1.DNSUnmanaged
+		managedInternalDNS      = o.Garden.InternalDomain != nil && o.Garden.InternalDomain.Provider != gardenv1beta1.DNSUnmanaged
 
 		g = flow.NewGraph("Shoot cluster deletion")
 
@@ -143,18 +156,53 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 			Fn:           flow.SimpleTaskFn(botanist.RefreshKubeControllerManagerChecksums).DoIf(cleanupShootResources).RetryUntilTimeout(defaultInterval, defaultTimeout),
 			Dependencies: flow.NewTaskIDs(deployCloudProviderSecret, refreshCloudProviderConfig),
 		})
-		wakeUpControllers = g.Add(flow.Task{
-			Name: "Waking up kube-/cloud-/machine-controller-manager to ensure proper cleanup of resources",
-			Fn:   flow.SimpleTaskFn(botanist.WakeUpControllers).DoIf(o.Shoot.IsHibernated && cleanupShootResources),
+		deploySecrets = g.Add(flow.Task{
+			Name: "Deploying Shoot certificates / keys",
+			Fn:   flow.SimpleTaskFn(botanist.DeploySecrets).DoIf(cleanupShootResources && botanist.Shoot.UsesCSI()),
+		})
+		refreshCSIControllers = g.Add(flow.Task{
+			Name:         "Refreshing CSI Controllers checksums",
+			Fn:           flow.SimpleTaskFn(hybridBotanist.RefreshCSIControllersChecksums).DoIf(cleanupShootResources && botanist.Shoot.UsesCSI()).RetryUntilTimeout(defaultInterval, defaultTimeout),
+			Dependencies: flow.NewTaskIDs(deployCloudProviderSecret, deploySecrets, refreshCloudProviderConfig),
+		})
+
+		wakeUpControlPlane = g.Add(flow.Task{
+			Name: "Waking up control plane to ensure proper cleanup of resources",
+			Fn:   flow.TaskFn(botanist.WakeUpControlPlane).DoIf(o.Shoot.IsHibernated && cleanupShootResources),
+		})
+
+		initializeShootClients = g.Add(flow.Task{
+			Name:         "Initializing connection to Shoot",
+			Fn:           flow.SimpleTaskFn(botanist.InitializeShootClients).DoIf(cleanupShootResources).RetryUntilTimeout(defaultInterval, 2*time.Minute),
+			Dependencies: flow.NewTaskIDs(deployCloudProviderSecret, refreshMachineClassSecrets, refreshCloudProviderConfig, refreshCloudControllerManager, refreshKubeControllerManager, refreshCSIControllers, wakeUpControlPlane),
+		})
+
+		// Only needed for migration from in-tree DNS management to out-of-tree mgmt by an extension DNS controller.
+		// If a shoot is already marked for deletion then the new DNSProvider/DNSEntry resources might not exist, so
+		// let's just quickly deploy them. If they already existed then nothing happens, but we can make sure that the
+		// extension DNS controller cleans up. If they did not exist then the resources are just created, and can be
+		// safely deleted by latter steps.
+		waitUntilKubeAPIServerServiceIsReady = g.Add(flow.Task{
+			Name: "Waiting until Kubernetes API server service has reported readiness",
+			Fn:   flow.TaskFn(botanist.WaitUntilKubeAPIServerServiceIsReady).DoIf(isCloud && internalDNSMigrationNeeded),
+		})
+		deployInternalDomainDNSRecord = g.Add(flow.Task{
+			Name:         "Deploying internal domain DNS record",
+			Fn:           flow.TaskFn(botanist.DeployInternalDomainDNSRecord).DoIf(managedInternalDNS && internalDNSMigrationNeeded),
+			Dependencies: flow.NewTaskIDs(waitUntilKubeAPIServerServiceIsReady),
+		})
+		deployExternalDomainDNSRecord = g.Add(flow.Task{
+			Name: "Deploying external domain DNS record",
+			Fn:   flow.TaskFn(botanist.DeployExternalDomainDNSRecord).DoIf(managedExternalDNS && externalDNSMigrationNeeded),
+		})
+		deployIngressDNSRecord = g.Add(flow.Task{
+			Name:         "Ensuring ingress DNS record",
+			Fn:           flow.TaskFn(botanist.EnsureIngressDNSRecord).DoIf(managedExternalDNS && cleanupShootResources && ingressDNSMigrationNeeded).RetryUntilTimeout(defaultInterval, 10*time.Minute),
+			Dependencies: flow.NewTaskIDs(initializeShootClients),
 		})
 
 		// Deletion of monitoring stack (to avoid false positive alerts) and kube-addon-manager (to avoid redeploying
 		// resources).
-		initializeShootClients = g.Add(flow.Task{
-			Name:         "Initializing connection to Shoot",
-			Fn:           flow.SimpleTaskFn(botanist.InitializeShootClients).DoIf(cleanupShootResources).RetryUntilTimeout(defaultInterval, 2*time.Minute),
-			Dependencies: flow.NewTaskIDs(deployCloudProviderSecret, refreshMachineClassSecrets, refreshCloudProviderConfig, refreshCloudControllerManager, refreshKubeControllerManager),
-		})
 		deleteSeedMonitoring = g.Add(flow.Task{
 			Name:         "Deleting Shoot monitoring stack in Seed",
 			Fn:           flow.SimpleTaskFn(botanist.DeleteSeedMonitoring).RetryUntilTimeout(defaultInterval, defaultTimeout),
@@ -177,47 +225,40 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 		})
 
 		cleanupWebhooks = g.Add(flow.Task{
-			Name:         "Cleaning up non-gardener webhooks",
+			Name:         "Cleaning up webhooks",
 			Fn:           flow.TaskFn(botanist.CleanWebhooks).DoIf(cleanupShootResources),
-			Dependencies: flow.NewTaskIDs(refreshKubeControllerManager, refreshCloudControllerManager, wakeUpControllers, waitUntilKubeAddonManagerDeleted),
+			Dependencies: flow.NewTaskIDs(refreshKubeControllerManager, refreshCloudControllerManager, wakeUpControlPlane, waitUntilKubeAddonManagerDeleted),
 		})
 		waitForControllersToBeActive = g.Add(flow.Task{
 			Name:         "Waiting until both cloud-controller-manager and kube-controller-manager are active",
 			Fn:           flow.SimpleTaskFn(botanist.WaitForControllersToBeActive).DoIf(cleanupShootResources).RetryUntilTimeout(defaultInterval, defaultTimeout),
 			Dependencies: flow.NewTaskIDs(cleanupWebhooks),
 		})
-
-		// We need to clean up the cluster resources which may have footprints in the infrastructure (such as
-		// LoadBalancers, volumes, ...). We do that by deleting all namespaces other than the three standard
-		// namespaces which cannot be deleted (kube-system, default, kube-public). In those three namespaces
-		// we delete all CRDs, workload, services and PVCs.
-		// If the deletion of a CRD or an API service fails, then it is force deleted.
-		cleanCustomResourceDefinitions = g.Add(flow.Task{
-			Name: "Cleaning custom resource definitions",
-			Fn: flow.SimpleTaskFn(botanist.CleanCustomResourceDefinitions).RetryUntilTimeout(defaultInterval, 5*time.Minute).DoIf(cleanupShootResources).
-				RecoverTimeout(flow.SimpleTaskFn(botanist.ForceDeleteCustomResourceDefinitions).RetryUntilTimeout(defaultInterval, 2*time.Minute).ToRecoverFn()),
-			Dependencies: flow.NewTaskIDs(waitUntilKubeAddonManagerDeleted, deleteClusterAutoscaler, waitForControllersToBeActive),
-		})
-		cleanCustomAPIServices = g.Add(flow.Task{
-			Name: "Cleaning custom API service definitions",
-			Fn: flow.SimpleTaskFn(botanist.CleanupCustomAPIServices).RetryUntilTimeout(defaultInterval, 5*time.Minute).DoIf(cleanupShootResources).
-				RecoverTimeout(flow.SimpleTaskFn(botanist.ForceDeleteCustomAPIServices).RetryUntilTimeout(defaultInterval, 2*time.Minute).ToRecoverFn()),
+		cleanExtendedAPIs = g.Add(flow.Task{
+			Name:         "Cleaning extended API groups",
+			Fn:           flow.TaskFn(botanist.CleanExtendedAPIs).Timeout(10 * time.Minute).DoIf(cleanupShootResources),
 			Dependencies: flow.NewTaskIDs(waitUntilKubeAddonManagerDeleted, deleteClusterAutoscaler, waitForControllersToBeActive),
 		})
 		cleanKubernetesResources = g.Add(flow.Task{
 			Name:         "Cleaning kubernetes resources",
-			Fn:           flow.SimpleTaskFn(botanist.CleanKubernetesResources).RetryUntilTimeout(defaultInterval, 5*time.Minute).DoIf(cleanupShootResources),
-			Dependencies: flow.NewTaskIDs(cleanCustomResourceDefinitions, cleanCustomAPIServices),
+			Fn:           flow.TaskFn(botanist.CleanKubernetesResources).Timeout(10 * time.Minute).DoIf(cleanupShootResources),
+			Dependencies: flow.NewTaskIDs(cleanExtendedAPIs),
 		})
 		destroyMachines = g.Add(flow.Task{
 			Name:         "Destroying Shoot workers",
 			Fn:           flow.SimpleTaskFn(hybridBotanist.DestroyMachines).RetryUntilTimeout(defaultInterval, defaultTimeout).DoIf(isCloud),
 			Dependencies: flow.NewTaskIDs(cleanKubernetesResources),
 		})
+		deleteKubeAPIServer = g.Add(flow.Task{
+			Name:         "Deleting Kubernetes API server",
+			Fn:           flow.SimpleTaskFn(botanist.DeleteKubeAPIServer).Retry(defaultInterval),
+			Dependencies: flow.NewTaskIDs(cleanKubernetesResources, destroyMachines),
+		})
+
 		destroyNginxIngressResources = g.Add(flow.Task{
 			Name:         "Destroying ingress DNS record",
-			Fn:           flow.SimpleTaskFn(botanist.DestroyIngressDNSRecord),
-			Dependencies: flow.NewTaskIDs(cleanKubernetesResources),
+			Fn:           flow.TaskFn(botanist.DestroyIngressDNSRecord),
+			Dependencies: flow.NewTaskIDs(deployIngressDNSRecord),
 		})
 		destroyKube2IAMResources = g.Add(flow.Task{
 			Name:         "Destroying Kube2IAM resources",
@@ -231,22 +272,18 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 		})
 		destroyExternalDomainDNSRecord = g.Add(flow.Task{
 			Name:         "Destroying external domain DNS record",
-			Fn:           flow.SimpleTaskFn(botanist.DestroyExternalDomainDNSRecord),
-			Dependencies: flow.NewTaskIDs(cleanKubernetesResources),
+			Fn:           flow.TaskFn(botanist.DestroyExternalDomainDNSRecord),
+			Dependencies: flow.NewTaskIDs(cleanKubernetesResources, deployExternalDomainDNSRecord, destroyNginxIngressResources),
 		})
-
-		syncPointTerraformers = flow.NewTaskIDs(
+		syncPoint = flow.NewTaskIDs(
 			deleteSeedMonitoring,
+			deleteKubeAPIServer,
 			destroyNginxIngressResources,
 			destroyKube2IAMResources,
 			destroyInfrastructure,
 			destroyExternalDomainDNSRecord,
 		)
-		deleteKubeAPIServer = g.Add(flow.Task{
-			Name:         "Deleting Kubernetes API server",
-			Fn:           flow.SimpleTaskFn(botanist.DeleteKubeAPIServer).Retry(defaultInterval),
-			Dependencies: flow.NewTaskIDs(syncPointTerraformers),
-		})
+
 		deleteBackupInfrastructure = g.Add(flow.Task{
 			Name:         "Deleting backup infrastructure",
 			Fn:           flow.SimpleTaskFn(botanist.DeleteBackupInfrastructure),
@@ -254,13 +291,13 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 		})
 		destroyInternalDomainDNSRecord = g.Add(flow.Task{
 			Name:         "Destroying internal domain DNS record",
-			Fn:           flow.SimpleTaskFn(botanist.DestroyInternalDomainDNSRecord),
-			Dependencies: flow.NewTaskIDs(syncPointTerraformers),
+			Fn:           flow.TaskFn(botanist.DestroyInternalDomainDNSRecord),
+			Dependencies: flow.NewTaskIDs(syncPoint, deployInternalDomainDNSRecord),
 		})
 		deleteNamespace = g.Add(flow.Task{
 			Name:         "Deleting Shoot namespace in Seed",
 			Fn:           flow.SimpleTaskFn(botanist.DeleteNamespace).Retry(defaultInterval),
-			Dependencies: flow.NewTaskIDs(syncPointTerraformers, destroyInternalDomainDNSRecord, deleteBackupInfrastructure, deleteKubeAPIServer),
+			Dependencies: flow.NewTaskIDs(syncPoint, destroyInternalDomainDNSRecord, deleteBackupInfrastructure, deleteKubeAPIServer),
 		})
 		_ = g.Add(flow.Task{
 			Name:         "Waiting until Shoot namespace in Seed has been deleted",
@@ -282,9 +319,9 @@ func (c *defaultControl) deleteShoot(o *operation.Operation) *gardenv1beta1.Last
 	if err != nil {
 		o.Logger.Errorf("Error deleting Shoot %q: %+v", o.Shoot.Info.Name, err)
 
-		return &gardenv1beta1.LastError{
-			Codes:       helper.ExtractErrorCodes(flow.Causes(err)),
-			Description: helper.FormatLastErrDescription(err),
+		return &gardencorev1alpha1.LastError{
+			Codes:       gardencorev1alpha1helper.ExtractErrorCodes(flow.Causes(err)),
+			Description: gardencorev1alpha1helper.FormatLastErrDescription(err),
 		}
 	}
 
@@ -298,9 +335,9 @@ func (c *defaultControl) updateShootStatusDeleteStart(o *operation.Operation) er
 		now    = metav1.Now()
 	)
 
-	newShoot, err := kubernetes.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
+	newShoot, err := kutil.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
 		func(shoot *gardenv1beta1.Shoot) (*gardenv1beta1.Shoot, error) {
-			if status.RetryCycleStartTime == nil || (status.LastOperation != nil && status.LastOperation.Type != gardenv1beta1.ShootLastOperationTypeDelete) {
+			if status.RetryCycleStartTime == nil || (status.LastOperation != nil && status.LastOperation.Type != gardencorev1alpha1.LastOperationTypeDelete) {
 				shoot.Status.RetryCycleStartTime = &now
 			}
 			if len(status.TechnicalID) == 0 {
@@ -309,9 +346,9 @@ func (c *defaultControl) updateShootStatusDeleteStart(o *operation.Operation) er
 
 			shoot.Status.Gardener = *o.GardenerInfo
 			shoot.Status.ObservedGeneration = o.Shoot.Info.Generation
-			shoot.Status.LastOperation = &gardenv1beta1.LastOperation{
-				Type:           gardenv1beta1.ShootLastOperationTypeDelete,
-				State:          gardenv1beta1.ShootLastOperationStateProcessing,
+			shoot.Status.LastOperation = &gardencorev1alpha1.LastOperation{
+				Type:           gardencorev1alpha1.LastOperationTypeDelete,
+				State:          gardencorev1alpha1.LastOperationStateProcessing,
 				Progress:       1,
 				Description:    "Deletion of Shoot cluster in progress.",
 				LastUpdateTime: now,
@@ -325,13 +362,13 @@ func (c *defaultControl) updateShootStatusDeleteStart(o *operation.Operation) er
 }
 
 func (c *defaultControl) updateShootStatusDeleteSuccess(o *operation.Operation) error {
-	newShoot, err := kubernetes.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
+	newShoot, err := kutil.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
 		func(shoot *gardenv1beta1.Shoot) (*gardenv1beta1.Shoot, error) {
 			shoot.Status.RetryCycleStartTime = nil
 			shoot.Status.LastError = nil
-			shoot.Status.LastOperation = &gardenv1beta1.LastOperation{
-				Type:           gardenv1beta1.ShootLastOperationTypeDelete,
-				State:          gardenv1beta1.ShootLastOperationStateSucceeded,
+			shoot.Status.LastOperation = &gardencorev1alpha1.LastOperation{
+				Type:           gardencorev1alpha1.LastOperationTypeDelete,
+				State:          gardencorev1alpha1.LastOperationStateSucceeded,
 				Progress:       100,
 				Description:    "Shoot cluster has been successfully deleted.",
 				LastUpdateTime: metav1.Now(),
@@ -364,31 +401,31 @@ func (c *defaultControl) updateShootStatusDeleteSuccess(o *operation.Operation) 
 			return false, err
 		}
 		lastOperation := shoot.Status.LastOperation
-		if !sets.NewString(shoot.Finalizers...).Has(gardenv1beta1.GardenerName) && lastOperation != nil && lastOperation.Type == gardenv1beta1.ShootLastOperationTypeDelete && lastOperation.State == gardenv1beta1.ShootLastOperationStateSucceeded {
+		if !sets.NewString(shoot.Finalizers...).Has(gardenv1beta1.GardenerName) && lastOperation != nil && lastOperation.Type == gardencorev1alpha1.LastOperationTypeDelete && lastOperation.State == gardencorev1alpha1.LastOperationStateSucceeded {
 			return true, nil
 		}
 		return false, nil
 	})
 }
 
-func (c *defaultControl) updateShootStatusDeleteError(o *operation.Operation, lastError *gardenv1beta1.LastError) (gardenv1beta1.ShootLastOperationState, error) {
+func (c *defaultControl) updateShootStatusDeleteError(o *operation.Operation, lastError *gardencorev1alpha1.LastError) (gardencorev1alpha1.LastOperationState, error) {
 	var (
-		state       = gardenv1beta1.ShootLastOperationStateFailed
+		state       = gardencorev1alpha1.LastOperationStateFailed
 		description = lastError.Description
 	)
 
-	newShoot, err := kubernetes.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
+	newShoot, err := kutil.TryUpdateShootStatus(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta,
 		func(shoot *gardenv1beta1.Shoot) (*gardenv1beta1.Shoot, error) {
 			if !utils.TimeElapsed(shoot.Status.RetryCycleStartTime, c.config.Controllers.Shoot.RetryDuration.Duration) {
 				description += " Operation will be retried."
-				state = gardenv1beta1.ShootLastOperationStateError
+				state = gardencorev1alpha1.LastOperationStateError
 			} else {
 				shoot.Status.RetryCycleStartTime = nil
 			}
 
 			shoot.Status.Gardener = *o.GardenerInfo
 			shoot.Status.LastError = lastError
-			shoot.Status.LastOperation.Type = gardenv1beta1.ShootLastOperationTypeDelete
+			shoot.Status.LastOperation.Type = gardencorev1alpha1.LastOperationTypeDelete
 			shoot.Status.LastOperation.State = state
 			shoot.Status.LastOperation.Description = description
 			shoot.Status.LastOperation.LastUpdateTime = metav1.Now()
@@ -400,9 +437,23 @@ func (c *defaultControl) updateShootStatusDeleteError(o *operation.Operation, la
 	}
 	o.Logger.Error(description)
 
-	newShootAfterLabel, err := kubernetes.TryUpdateShootLabels(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta, StatusLabelTransform(StatusUnhealthy))
+	newShootAfterLabel, err := kutil.TryUpdateShootLabels(c.k8sGardenClient.Garden(), retry.DefaultRetry, o.Shoot.Info.ObjectMeta, StatusLabelTransform(StatusUnhealthy))
 	if err == nil {
 		o.Shoot.Info = newShootAfterLabel
 	}
 	return state, err
+}
+
+func (c *defaultControl) needsDNSMigration(o *operation.Operation, terraformerPurpose string) (bool, error) {
+	tf, err := o.NewShootTerraformer(terraformerPurpose)
+	if err != nil {
+		return false, err
+	}
+
+	configExists, err := tf.ConfigExists()
+	if err != nil {
+		return false, err
+	}
+
+	return configExists, nil
 }

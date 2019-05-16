@@ -15,6 +15,8 @@
 package seed
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -30,15 +32,17 @@ import (
 	"github.com/gardener/gardener/pkg/operation/certmanagement"
 	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/utils"
+	"github.com/gardener/gardener/pkg/utils/chart"
 	"github.com/gardener/gardener/pkg/utils/imagevector"
 	kutils "github.com/gardener/gardener/pkg/utils/kubernetes"
-	"github.com/gardener/gardener/pkg/utils/secrets"
+	utilsecrets "github.com/gardener/gardener/pkg/utils/secrets"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -47,11 +51,11 @@ const (
 	caSeed = "ca-seed"
 )
 
-var wantedCertificateAuthorities = map[string]*secrets.CertificateSecretConfig{
-	caSeed: &secrets.CertificateSecretConfig{
+var wantedCertificateAuthorities = map[string]*utilsecrets.CertificateSecretConfig{
+	caSeed: {
 		Name:       caSeed,
 		CommonName: "kubernetes",
-		CertType:   secrets.CACert,
+		CertType:   utilsecrets.CACert,
 	},
 }
 
@@ -115,35 +119,54 @@ func List(k8sGardenClient kubernetes.Interface, k8sGardenInformers gardeninforme
 // generateWantedSecrets returns a list of Secret configuration objects satisfying the secret config intface,
 // each containing their specific configuration for the creation of certificates (server/client), RSA key pairs, basic
 // authentication credentials, etc.
-func generateWantedSecrets(seed *Seed, certificateAuthorities map[string]*secrets.Certificate) ([]secrets.ConfigInterface, error) {
-	var (
-		kibanaHost = seed.GetIngressFQDN("k", "", "garden")
-	)
-
+func generateWantedSecrets(seed *Seed, certificateAuthorities map[string]*utilsecrets.Certificate) ([]utilsecrets.ConfigInterface, error) {
 	if len(certificateAuthorities) != len(wantedCertificateAuthorities) {
 		return nil, fmt.Errorf("missing certificate authorities")
 	}
 
-	secretList := []secrets.ConfigInterface{
-		&secrets.CertificateSecretConfig{
-			Name: "kibana-tls",
+	secretList := []utilsecrets.ConfigInterface{}
 
-			CommonName:   "kibana",
-			Organization: []string{fmt.Sprintf("%s:logging:ingress", garden.GroupName)},
-			DNSNames:     []string{kibanaHost},
-			IPAddresses:  nil,
+	// Logging feature gate
+	if controllermanagerfeatures.FeatureGate.Enabled(features.Logging) {
+		secretList = append(secretList,
+			&utilsecrets.CertificateSecretConfig{
+				Name: "kibana-tls",
 
-			CertType:  secrets.ServerCert,
-			SigningCA: certificateAuthorities[caSeed],
-		},
-		// Secret definition for monitoring
-		&secrets.BasicAuthSecretConfig{
-			Name:   "seed-logging-ingress-credentials",
-			Format: secrets.BasicAuthFormatNormal,
+				CommonName:   "kibana",
+				Organization: []string{fmt.Sprintf("%s:logging:ingress", garden.GroupName)},
+				DNSNames:     []string{seed.GetIngressFQDN("k", "", "garden")},
+				IPAddresses:  nil,
 
-			Username:       "admin",
-			PasswordLength: 32,
-		},
+				CertType:  utilsecrets.ServerCert,
+				SigningCA: certificateAuthorities[caSeed],
+			},
+
+			// Secret definition for logging ingress
+			&utilsecrets.BasicAuthSecretConfig{
+				Name:   "seed-logging-ingress-credentials",
+				Format: utilsecrets.BasicAuthFormatNormal,
+
+				Username:       "admin",
+				PasswordLength: 32,
+			},
+		)
+	}
+
+	// VPA feature gate
+	if controllermanagerfeatures.FeatureGate.Enabled(features.VPA) {
+		secretList = append(secretList,
+			&utilsecrets.CertificateSecretConfig{
+				Name: "vpa-tls-certs",
+
+				CommonName:   "vpa-webhook.garden.svc",
+				Organization: nil,
+				DNSNames:     []string{"vpa-webhook.garden.svc", "vpa-webhook"},
+				IPAddresses:  nil,
+
+				CertType:  utilsecrets.ServerCert,
+				SigningCA: certificateAuthorities[caSeed],
+			},
+		)
 	}
 
 	return secretList, nil
@@ -152,8 +175,7 @@ func generateWantedSecrets(seed *Seed, certificateAuthorities map[string]*secret
 // deployCertificates deploys CA and TLS certificates inside the garden namespace
 // It takes a map[string]*corev1.Secret object which contains secrets that have already been deployed inside that namespace to avoid duplication errors.
 func deployCertificates(seed *Seed, k8sSeedClient kubernetes.Interface, existingSecretsMap map[string]*corev1.Secret) (map[string]*corev1.Secret, error) {
-
-	_, certificateAuthorities, err := secrets.GenerateCertificateAuthorities(k8sSeedClient, existingSecretsMap, wantedCertificateAuthorities, common.GardenNamespace)
+	_, certificateAuthorities, err := utilsecrets.GenerateCertificateAuthorities(k8sSeedClient, existingSecretsMap, wantedCertificateAuthorities, common.GardenNamespace)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +185,7 @@ func deployCertificates(seed *Seed, k8sSeedClient kubernetes.Interface, existing
 		return nil, err
 	}
 
-	return secrets.GenerateClusterSecrets(k8sSeedClient, existingSecretsMap, wantedSecretsList, common.GardenNamespace)
+	return utilsecrets.GenerateClusterSecrets(k8sSeedClient, existingSecretsMap, wantedSecretsList, common.GardenNamespace)
 }
 
 // BootstrapCluster bootstraps a Seed cluster and deploys various required manifests.
@@ -177,7 +199,6 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 	if err != nil {
 		return err
 	}
-
 	gardenNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: common.GardenNamespace,
@@ -200,20 +221,27 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 		return err
 	}
 
-	images, err := imageVector.FindImages([]string{
-		common.AlertManagerImageName,
-		common.AlpineImageName,
-		common.CertManagerImageName,
-		common.ConfigMapReloaderImageName,
-		common.CuratorImageName,
-		common.ElasticsearchImageName,
-		common.FluentBitImageName,
-		common.FluentdEsImageName,
-		common.GardenerExternalAdmissionControllerImageName,
-		common.KibanaImageName,
-		common.PauseContainerImageName,
-		common.PrometheusImageName,
-	}, k8sSeedClient.Version(), k8sSeedClient.Version())
+	images, err := imagevector.FindImages(imageVector,
+		[]string{
+			common.AlertManagerImageName,
+			common.AlpineImageName,
+			common.CertManagerImageName,
+			common.ConfigMapReloaderImageName,
+			common.CuratorImageName,
+			common.ElasticsearchImageName,
+			common.FluentBitImageName,
+			common.FluentdEsImageName,
+			common.KibanaImageName,
+			common.PauseContainerImageName,
+			common.PrometheusImageName,
+			common.VpaAdmissionControllerImageName,
+			common.VpaExporterImageName,
+			common.VpaRecommenderImageName,
+			common.VpaUpdaterImageName,
+		},
+		imagevector.RuntimeVersion(k8sSeedClient.Version()),
+		imagevector.TargetVersion(k8sSeedClient.Version()),
+	)
 	if err != nil {
 		return err
 	}
@@ -237,15 +265,13 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 			existingSecretsMap[secret.ObjectMeta.Name] = &secretObj
 		}
 
-		// currently the generated certificates are only used by the kibana so they are all disabled/enabled when the logging feature is disabled/enabled
 		deployedSecretsMap, err := deployCertificates(seed, k8sSeedClient, existingSecretsMap)
 		if err != nil {
 			return err
 		}
 
 		credentials := deployedSecretsMap["seed-logging-ingress-credentials"]
-		basicAuth = utils.CreateSHA1Secret(credentials.Data["username"], credentials.Data["password"])
-
+		basicAuth = utils.CreateSHA1Secret(credentials.Data[utilsecrets.DataKeyUserName], credentials.Data[utilsecrets.DataKeyPassword])
 		kibanaHost = seed.GetIngressFQDN("k", "", "garden")
 	} else {
 		if err := common.DeleteLoggingStack(k8sSeedClient, common.GardenNamespace); err != nil && !apierrors.IsNotFound(err) {
@@ -275,11 +301,58 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 		}
 	}
 
-	// AlertManager configuration
+	// VPA feature gate
+	var (
+		vpaEnabled        = controllermanagerfeatures.FeatureGate.Enabled(features.VPA)
+		vpaPodAnnotations map[string]interface{}
+	)
 
+	if vpaEnabled {
+		existingSecrets, err := k8sSeedClient.ListSecrets(common.GardenNamespace, metav1.ListOptions{})
+		if err != nil {
+			return err
+		}
+
+		for _, secret := range existingSecrets.Items {
+			secretObj := secret
+			existingSecretsMap[secret.ObjectMeta.Name] = &secretObj
+		}
+
+		deployedSecretsMap, err := deployCertificates(seed, k8sSeedClient, existingSecretsMap)
+		if err != nil {
+			return err
+		}
+		jsonString, err := json.Marshal(deployedSecretsMap["vpa-tls-certs"].Data)
+		if err != nil {
+			return err
+		}
+
+		vpaPodAnnotations = map[string]interface{}{
+			"checksum/secret-vpa-tls-certs": utils.ComputeSHA256Hex(jsonString),
+		}
+
+	} else {
+		if err := common.DeleteVpa(k8sSeedClient, common.GardenNamespace); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	// Cleanup legacy external admission controller (no longer needed).
+	if err := k8sSeedClient.DeleteService(common.GardenNamespace, "gardener-external-admission-controller"); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if err := k8sSeedClient.DeleteDeployment(common.GardenNamespace, "gardener-external-admission-controller"); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if err := k8sSeedClient.DeleteSecret(common.GardenNamespace, "gardener-external-admission-controller-tls"); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// AlertManager configuration
 	alertManagerConfig := map[string]interface{}{
 		"storage": seed.GetValidVolumeSize("1Gi"),
 	}
+
 	if alertingSMTPKeys := common.GetSecretKeysWithPrefix(common.GardenRoleAlertingSMTP, secrets); len(alertingSMTPKeys) > 0 {
 		emailConfigs := make([]map[string]interface{}, 0, len(alertingSMTPKeys))
 		for _, key := range alertingSMTPKeys {
@@ -302,24 +375,33 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 	}
 	nodeCount := len(nodes.Items)
 
-	chartRenderer, err := chartrenderer.New(k8sSeedClient.Kubernetes())
+	chartRenderer, err := chartrenderer.NewForConfig(k8sSeedClient.RESTConfig())
 	if err != nil {
 		return err
 	}
+	applier, err := kubernetes.NewApplierForConfig(k8sSeedClient.RESTConfig())
+	if err != nil {
+		return err
+	}
+	chartApplier := kubernetes.NewChartApplier(chartRenderer, applier)
 
 	var (
-		applierOptions     = kubernetes.DefaultApplierOptions
-		clusterIssuerMerge = func(new, old *unstructured.Unstructured) {
-			// Apply status from old ClusterIssuer to retain the issuer's readiness state.
+		applierOptions          = kubernetes.DefaultApplierOptions
+		retainStatusInformation = func(new, old *unstructured.Unstructured) {
+			// Apply status from old Object to retain status information
 			new.Object["status"] = old.Object["status"]
 		}
+		vpaGK    = schema.GroupKind{Group: "autoscaling.k8s.io", Kind: "VerticalPodAutoscaler"}
+		issuerGK = schema.GroupKind{Group: "certmanager.k8s.io", Kind: "ClusterIssuer"}
 	)
-	applierOptions.MergeFuncs["ClusterIssuer"] = clusterIssuerMerge
 
-	return common.ApplyChartWithOptions(k8sSeedClient, chartRenderer, filepath.Join("charts", chartName), chartName, common.GardenNamespace, nil, map[string]interface{}{
+	applierOptions.MergeFuncs[vpaGK] = retainStatusInformation
+	applierOptions.MergeFuncs[issuerGK] = retainStatusInformation
+
+	return chartApplier.ApplyChartWithOptions(context.TODO(), filepath.Join("charts", chartName), common.GardenNamespace, chartName, nil, map[string]interface{}{
 		"cloudProvider": seed.CloudProvider,
 		"global": map[string]interface{}{
-			"images": images,
+			"images": chart.ImageMapToValues(images),
 		},
 		"reserveExcessCapacity": seed.reserveExcessCapacity,
 		"replicas": map[string]interface{}{
@@ -336,12 +418,14 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 				"host":            kibanaHost,
 			},
 			"curator": map[string]interface{}{
-				"objectCount":       nodeCount,
-				"baseDiskThreshold": 2 * 1073741824,
+				// Set curator threshold to 5Gi
+				"diskSpaceThreshold": 5 * 1024 * 1024 * 1024,
 			},
 			"elasticsearch": map[string]interface{}{
-				"objectCount":               nodeCount,
-				"elasticsearchVolumeSizeGB": 100,
+				"objectCount": nodeCount,
+				"persistence": map[string]interface{}{
+					"size": seed.GetValidVolumeSize("100Gi"),
+				},
 			},
 		},
 		"fluentd-es": map[string]interface{}{
@@ -355,6 +439,10 @@ func BootstrapCluster(seed *Seed, secrets map[string]*corev1.Secret, imageVector
 			"clusterissuer": clusterIssuer,
 		},
 		"alertmanager": alertManagerConfig,
+		"vpa": map[string]interface{}{
+			"enabled":        vpaEnabled,
+			"podAnnotations": vpaPodAnnotations,
+		},
 	}, applierOptions)
 }
 
@@ -445,14 +533,14 @@ func createDNSProviderValues(configs []certmanagement.DNSProviderConfig) []inter
 // (on the seed) in terms of reserve-excess-capacity deployment replicas. Each deployment replica currently
 // corresponds to resources of (request/limits) 500m of CPU and 1200Mi of Memory.
 // ReplicasRequiredToSupportSingleShoot is 4 which is 2000m of CPU and 4800Mi of RAM.
-// The logic for computation of desired excess capacity corresponds to either deploying 3 new shoot control planes
-// or 5% of existing shoot control planes of current number of shoots deployed in seed (5 if current shoots are 100),
+// The logic for computation of desired excess capacity corresponds to either deploying 2 new shoot control planes
+// or 3% of existing shoot control planes of current number of shoots deployed in seed (3 if current shoots are 100),
 // whichever of the two is larger
 func DesiredExcessCapacity(numberOfAssociatedShoots int) int {
 	var (
 		replicasToSupportSingleShoot          = 4
-		effectiveExcessCapacity               = 3
-		excessCapacityBasedOnAssociatedShoots = int(float64(numberOfAssociatedShoots) * 0.05)
+		effectiveExcessCapacity               = 2
+		excessCapacityBasedOnAssociatedShoots = int(float64(numberOfAssociatedShoots) * 0.03)
 	)
 
 	if excessCapacityBasedOnAssociatedShoots > effectiveExcessCapacity {

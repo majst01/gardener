@@ -79,7 +79,7 @@ var _ = Describe("deleteconfirmation", func() {
 		It("should do nothing because the resource is not Shoot or Project", func() {
 			attrs = admission.NewAttributesRecord(nil, nil, garden.Kind("Foo").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("foos").WithVersion("version"), "", admission.Delete, false, nil)
 
-			err := admissionHandler.Validate(attrs)
+			err := admissionHandler.Validate(attrs, nil)
 
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -93,7 +93,7 @@ var _ = Describe("deleteconfirmation", func() {
 					return true, nil, fmt.Errorf(msg)
 				})
 
-				err := admissionHandler.Validate(attrs)
+				err := admissionHandler.Validate(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(`shoot.garden.sapcloud.io "dummy" not found`))
@@ -105,7 +105,7 @@ var _ = Describe("deleteconfirmation", func() {
 
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 					Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -119,7 +119,7 @@ var _ = Describe("deleteconfirmation", func() {
 					}
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 					Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -133,7 +133,7 @@ var _ = Describe("deleteconfirmation", func() {
 					}
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
@@ -154,23 +154,23 @@ var _ = Describe("deleteconfirmation", func() {
 						}, nil
 					})
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
 			})
 
 			Context("no ignore annotation", func() {
-				It("should reject if the ignore-shoot annotation is set field", func() {
+				It("should reject if the ignore-shoot annotation is set", func() {
 					attrs = admission.NewAttributesRecord(nil, nil, garden.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, garden.Resource("shoots").WithVersion("version"), "", admission.Delete, false, nil)
 
 					shoot.Annotations = map[string]string{
 						common.ConfirmationDeletion: "true",
-						common.ShootIgnore:          "",
+						common.ShootIgnore:          "true",
 					}
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 					Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -188,7 +188,7 @@ var _ = Describe("deleteconfirmation", func() {
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 					Expect(shootStore.Add(shoot2)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
@@ -203,7 +203,7 @@ var _ = Describe("deleteconfirmation", func() {
 					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
 					Expect(shootStore.Add(shoot2)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 				})
@@ -219,7 +219,7 @@ var _ = Describe("deleteconfirmation", func() {
 					return true, nil, fmt.Errorf(msg)
 				})
 
-				err := admissionHandler.Validate(attrs)
+				err := admissionHandler.Validate(attrs, nil)
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(msg))
@@ -231,7 +231,7 @@ var _ = Describe("deleteconfirmation", func() {
 
 					Expect(projectStore.Add(&project)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 					Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -245,7 +245,7 @@ var _ = Describe("deleteconfirmation", func() {
 					}
 					Expect(projectStore.Add(&project)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 					Expect(apierrors.IsForbidden(err)).To(BeTrue())
@@ -259,7 +259,7 @@ var _ = Describe("deleteconfirmation", func() {
 					}
 					Expect(projectStore.Add(&project)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
@@ -278,7 +278,7 @@ var _ = Describe("deleteconfirmation", func() {
 						}, nil
 					})
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
@@ -295,7 +295,7 @@ var _ = Describe("deleteconfirmation", func() {
 					Expect(projectStore.Add(&project)).NotTo(HaveOccurred())
 					Expect(projectStore.Add(project2)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).NotTo(HaveOccurred())
 				})
@@ -310,7 +310,7 @@ var _ = Describe("deleteconfirmation", func() {
 					Expect(projectStore.Add(&project)).NotTo(HaveOccurred())
 					Expect(projectStore.Add(project2)).NotTo(HaveOccurred())
 
-					err := admissionHandler.Validate(attrs)
+					err := admissionHandler.Validate(attrs, nil)
 
 					Expect(err).To(HaveOccurred())
 				})

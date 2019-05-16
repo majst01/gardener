@@ -1,11 +1,13 @@
+{{- /* .Values.replicas is of type 'float64', so let's cast it to string to have proper types for comparison */}}
+{{- if ne (.Values.replicas | toString) "0" }}
 apiVersion: {{ include "hpaversion" . }}
 kind: HorizontalPodAutoscaler
 metadata:
   name: kube-apiserver
   namespace: {{ .Release.Namespace }}
 spec:
-  maxReplicas: {{ .Values.maxReplicas }}
   minReplicas: {{ .Values.minReplicas }}
+  maxReplicas: {{ .Values.maxReplicas }}
   scaleTargetRef:
     apiVersion: {{ include "deploymentversion" . }}
     kind: Deployment
@@ -15,3 +17,8 @@ spec:
     resource:
       name: cpu
       targetAverageUtilization: {{ .Values.targetAverageUtilization }}
+  - type: Resource
+    resource:
+      name: memory
+      targetAverageUtilization: {{ .Values.targetAverageUtilization }}
+{{- end }}

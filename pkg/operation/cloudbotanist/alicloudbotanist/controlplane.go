@@ -95,7 +95,9 @@ func (b *AlicloudBotanist) RefreshCloudProviderConfig(currentConfig map[string]s
 // GenerateKubeAPIServerConfig generates the cloud provider specific values which are required to render the
 // Deployment manifest of the kube-apiserver properly.
 func (b *AlicloudBotanist) GenerateKubeAPIServerConfig() (map[string]interface{}, error) {
-	return nil, nil
+	return map[string]interface{}{
+		"enableCSI": true,
+	}, nil
 }
 
 // GenerateCloudControllerManagerConfig generates the cloud provider specific values which are required to
@@ -105,30 +107,12 @@ func (b *AlicloudBotanist) GenerateCloudControllerManagerConfig() (map[string]in
 	conf := map[string]interface{}{
 		"configureRoutes": false,
 	}
-	newConf, err := b.InjectImages(conf, b.SeedVersion(), b.ShootVersion(), common.AlicloudControllerManagerImageName)
+	newConf, err := b.InjectSeedShootImages(conf, common.AlicloudControllerManagerImageName)
 	if err != nil {
 		return conf, chartName, err
 	}
 
 	return newConf, chartName, nil
-}
-
-// GenerateCSIConfig generates the configuration for CSI charts
-func (b *AlicloudBotanist) GenerateCSIConfig() (map[string]interface{}, error) {
-	conf := map[string]interface{}{
-		"credential": map[string]interface{}{
-			"accessKeyID":     base64.StdEncoding.EncodeToString(b.Shoot.Secret.Data[AccessKeyID]),
-			"accessKeySecret": base64.StdEncoding.EncodeToString(b.Shoot.Secret.Data[AccessKeySecret]),
-		},
-		"enabled": true,
-	}
-
-	return b.InjectImages(conf, b.SeedVersion(), b.ShootVersion(),
-		common.CSIAttacherImageName,
-		common.CSIDriverRegistrarImageName,
-		common.CSIPluginAlicloudImageName,
-		common.CSIProvisionerImageName,
-	)
 }
 
 // GenerateKubeControllerManagerConfig generates the cloud provider specific values which are required to
@@ -145,9 +129,75 @@ func (b *AlicloudBotanist) GenerateKubeSchedulerConfig() (map[string]interface{}
 	return nil, nil
 }
 
+// GenerateETCDStorageClassConfig generates values which are required to create etcd volume storageclass properly.
+func (b *AlicloudBotanist) GenerateETCDStorageClassConfig() map[string]interface{} {
+	return map[string]interface{}{
+		"name":        "gardener.cloud-fast",
+		"capacity":    "25Gi",
+		"provisioner": "diskplugin.csi.alibabacloud.com",
+		"parameters": map[string]interface{}{
+			"csi.storage.k8s.io/fstype": "ext4",
+			"type":                      "cloud_ssd",
+			"readOnly":                  "false",
+		},
+	}
+}
+
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.
 func (b *AlicloudBotanist) GenerateEtcdBackupConfig() (map[string][]byte, map[string]interface{}, error) {
-	return map[string][]byte{}, map[string]interface{}{}, nil
+	tf, err := b.NewBackupInfrastructureTerraformer()
+	if err != nil {
+		return nil, nil, err
+	}
+	stateVariables, err := tf.GetStateOutputVariables(BucketName, StorageEndpoint)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	secretData := map[string][]byte{
+		StorageEndpoint: []byte(stateVariables[StorageEndpoint]),
+		AccessKeyID:     b.Seed.Secret.Data[AccessKeyID],
+		AccessKeySecret: b.Seed.Secret.Data[AccessKeySecret],
+	}
+
+	backupConfigData := map[string]interface{}{
+		"schedule":         b.ShootBackup.Schedule,
+		"storageProvider":  "OSS",
+		"storageContainer": stateVariables[BucketName],
+		"backupSecret":     common.BackupSecretName,
+		"env": []map[string]interface{}{
+			{
+				"name": "ALICLOUD_ENDPOINT",
+				"valueFrom": map[string]interface{}{
+					"secretKeyRef": map[string]interface{}{
+						"name": common.BackupSecretName,
+						"key":  StorageEndpoint,
+					},
+				},
+			},
+			{
+				"name": "ALICLOUD_ACCESS_KEY_ID",
+				"valueFrom": map[string]interface{}{
+					"secretKeyRef": map[string]interface{}{
+						"name": common.BackupSecretName,
+						"key":  AccessKeyID,
+					},
+				},
+			},
+			{
+				"name": "ALICLOUD_ACCESS_KEY_SECRET",
+				"valueFrom": map[string]interface{}{
+					"secretKeyRef": map[string]interface{}{
+						"name": common.BackupSecretName,
+						"key":  AccessKeySecret,
+					},
+				},
+			},
+		},
+		"volumeMount": []map[string]interface{}{},
+	}
+
+	return secretData, backupConfigData, nil
 }
 
 // GenerateKubeAPIServerExposeConfig defines the cloud provider specific values which configure how the kube-apiserver
@@ -159,6 +209,33 @@ func (b *AlicloudBotanist) GenerateKubeAPIServerExposeConfig() (map[string]inter
 			fmt.Sprintf("--external-hostname=%s", b.APIServerAddress),
 		},
 	}, nil
+}
+
+// GenerateCSIConfig generates the configuration for CSI charts
+func (b *AlicloudBotanist) GenerateCSIConfig() (map[string]interface{}, error) {
+	conf := map[string]interface{}{
+		"regionID": b.Shoot.Info.Spec.Cloud.Region,
+		"credential": map[string]interface{}{
+			"accessKeyID":     base64.StdEncoding.EncodeToString(b.Shoot.Secret.Data[AccessKeyID]),
+			"accessKeySecret": base64.StdEncoding.EncodeToString(b.Shoot.Secret.Data[AccessKeySecret]),
+		},
+		"podAnnotations": map[string]interface{}{
+			fmt.Sprintf("checksum/%s", common.CSIAttacher):             b.CheckSums[common.CSIAttacher],
+			fmt.Sprintf("checksum/%s", common.CloudProviderSecretName): b.CheckSums[common.CloudProviderSecretName],
+			fmt.Sprintf("checksum/%s", common.CSIProvisioner):          b.CheckSums[common.CSIProvisioner],
+			fmt.Sprintf("checksum/%s", common.CSISnapshotter):          b.CheckSums[common.CSISnapshotter],
+		},
+		"kubernetesVersion": b.ShootVersion(),
+		"enabled":           true,
+	}
+
+	return b.InjectShootShootImages(conf,
+		common.CSIAttacherImageName,
+		common.CSIPluginAlicloudImageName,
+		common.CSIProvisionerImageName,
+		common.CSISnapshotterImageName,
+		common.CSINodeDriverRegistrarImageName,
+	)
 }
 
 // GenerateKubeAPIServerServiceConfig generates the cloud provider specific values which are required to render the

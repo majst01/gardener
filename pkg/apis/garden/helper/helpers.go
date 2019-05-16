@@ -17,6 +17,7 @@ package helper
 import (
 	"errors"
 
+	gardencore "github.com/gardener/gardener/pkg/apis/core"
 	"github.com/gardener/gardener/pkg/apis/garden"
 )
 
@@ -48,6 +49,10 @@ func DetermineCloudProviderInProfile(spec garden.CloudProfileSpec) (garden.Cloud
 		numClouds++
 		cloud = garden.CloudProviderAlicloud
 	}
+	if spec.Packet != nil {
+		numClouds++
+		cloud = garden.CloudProviderPacket
+	}
 	if spec.Local != nil {
 		numClouds++
 		cloud = garden.CloudProviderLocal
@@ -58,7 +63,7 @@ func DetermineCloudProviderInProfile(spec garden.CloudProfileSpec) (garden.Cloud
 	}
 
 	if numClouds != 1 {
-		return "", errors.New("cloud profile must only contain exactly one field of alicloud/aws/azure/gcp/openstack/local")
+		return "", errors.New("cloud profile must only contain exactly one field of alicloud/aws/azure/gcp/openstack/packet/local")
 	}
 	return cloud, nil
 }
@@ -91,6 +96,10 @@ func DetermineCloudProviderInShoot(cloudObj garden.Cloud) (garden.CloudProvider,
 		numClouds++
 		cloud = garden.CloudProviderAlicloud
 	}
+	if cloudObj.Packet != nil {
+		numClouds++
+		cloud = garden.CloudProviderPacket
+	}
 	if cloudObj.Local != nil {
 		numClouds++
 		cloud = garden.CloudProviderLocal
@@ -101,16 +110,16 @@ func DetermineCloudProviderInShoot(cloudObj garden.Cloud) (garden.CloudProvider,
 	}
 
 	if numClouds != 1 {
-		return "", errors.New("cloud object must only contain exactly one field of aws/azure/gcp/openstack/local")
+		return "", errors.New("cloud object must only contain exactly one field of aws/azure/gcp/openstack/packet/local")
 	}
 	return cloud, nil
 }
 
 // GetK8SNetworks returns the Kubernetes network CIDRs for the Shoot cluster.
-func GetK8SNetworks(shoot *garden.Shoot) (garden.K8SNetworks, error) {
+func GetK8SNetworks(shoot *garden.Shoot) (gardencore.K8SNetworks, error) {
 	cloudProvider, err := DetermineCloudProviderInShoot(shoot.Spec.Cloud)
 	if err != nil {
-		return garden.K8SNetworks{}, err
+		return gardencore.K8SNetworks{}, err
 	}
 
 	switch cloudProvider {
@@ -126,20 +135,10 @@ func GetK8SNetworks(shoot *garden.Shoot) (garden.K8SNetworks, error) {
 		return shoot.Spec.Cloud.Metal.Networks.K8SNetworks, nil
 	case garden.CloudProviderAlicloud:
 		return shoot.Spec.Cloud.Alicloud.Networks.K8SNetworks, nil
+	case garden.CloudProviderPacket:
+		return shoot.Spec.Cloud.Packet.Networks.K8SNetworks, nil
 	case garden.CloudProviderLocal:
 		return shoot.Spec.Cloud.Local.Networks.K8SNetworks, nil
 	}
-	return garden.K8SNetworks{}, nil
-}
-
-// GetCondition returns the condition with the given <conditionType> out of the list of <conditions>.
-// In case the required type could not be found, it returns nil.
-func GetCondition(conditions []garden.Condition, conditionType garden.ConditionType) *garden.Condition {
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			c := condition
-			return &c
-		}
-	}
-	return nil
+	return gardencore.K8SNetworks{}, nil
 }

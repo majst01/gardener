@@ -19,10 +19,12 @@ import (
 	"fmt"
 
 	"github.com/gardener/gardener/pkg/api"
+	gardencore "github.com/gardener/gardener/pkg/apis/core"
 	"github.com/gardener/gardener/pkg/apis/garden"
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/apis/garden/validation"
 	"github.com/gardener/gardener/pkg/operation/common"
+
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -84,7 +86,7 @@ func mustIncreaseGeneration(oldShoot, newShoot *garden.Shoot) bool {
 		mustIncrease := false
 
 		switch lastOperation.State {
-		case garden.ShootLastOperationStateFailed:
+		case gardencore.LastOperationStateFailed:
 			// The shoot state is failed and the retry annotation is set.
 			if val, ok := newShoot.Annotations[common.ShootOperation]; ok && val == common.ShootOperationRetry {
 				mustIncrease = true
@@ -157,12 +159,12 @@ func ToSelectableFields(shoot *garden.Shoot) fields.Set {
 }
 
 // GetAttrs returns labels and fields of a given object for filtering purposes.
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
 	shoot, ok := obj.(*garden.Shoot)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("not a shoot")
+		return nil, nil, fmt.Errorf("not a shoot")
 	}
-	return labels.Set(shoot.ObjectMeta.Labels), ToSelectableFields(shoot), shoot.Initializers != nil, nil
+	return labels.Set(shoot.ObjectMeta.Labels), ToSelectableFields(shoot), nil
 }
 
 // SeedTriggerFunc matches correct seed when watching.

@@ -51,7 +51,9 @@ networking.k8s.io/v1
 {{- end -}}
 
 {{- define "priorityclassversion" -}}
-{{- if semverCompare ">= 1.11-0" .Capabilities.KubeVersion.GitVersion -}}
+{{- if semverCompare ">= 1.14-0" .Capabilities.KubeVersion.GitVersion -}}
+scheduling.k8s.io/v1
+{{- else if semverCompare ">= 1.11-0" .Capabilities.KubeVersion.GitVersion -}}
 scheduling.k8s.io/v1beta1
 {{- else -}}
 scheduling.k8s.io/v1alpha1
@@ -70,14 +72,26 @@ autoscaling/v2beta1
 admissionregistration.k8s.io/v1beta1
 {{- end -}}
 
-{{- define "initializeradmissionregistrationversion" -}}
-admissionregistration.k8s.io/v1alpha1
-{{- end -}}
-
 {{- define "poddisruptionbudgetversion" -}}
 policy/v1beta1
 {{- end -}}
 
 {{- define "podsecuritypolicyversion" -}}
 policy/v1beta1
+{{- end -}}
+
+{{- define "ingressversion" -}}
+{{- if semverCompare ">= 1.14-0" .Capabilities.KubeVersion.GitVersion -}}
+networking.k8s.io/v1beta1
+{{- else -}}
+extensions/v1beta1
+{{- end -}}
+{{- end -}}
+
+{{- define "storageclassversion" -}}
+{{- if semverCompare ">= 1.13-0" .Capabilities.KubeVersion.GitVersion -}}
+storage.k8s.io/v1
+{{- else -}}
+storage.k8s.io/v1beta1
+{{- end -}}
 {{- end -}}

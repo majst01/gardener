@@ -26,7 +26,6 @@ import (
 	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -66,13 +65,17 @@ func DetermineCloudProviderInProfile(spec gardenv1beta1.CloudProfileSpec) (garde
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderMetal
 	}
+	if spec.Packet != nil {
+		numClouds++
+		cloud = gardenv1beta1.CloudProviderPacket
+	}
 	if spec.Local != nil {
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderLocal
 	}
 
 	if numClouds != 1 {
-		return "", errors.New("cloud profile must only contain exactly one field of alicloud/aws/azure/gcp/openstack/local")
+		return "", errors.New("cloud profile must only contain exactly one field of alicloud/aws/azure/gcp/openstack/packet/local")
 	}
 	return cloud, nil
 }
@@ -115,6 +118,15 @@ func ShootWantsAlertmanager(shoot *gardenv1beta1.Shoot, secrets map[string]*core
 	return false
 }
 
+// ShootIgnoreAlerts checks if the alerts for the annotated shoot cluster should be ignored.
+func ShootIgnoreAlerts(shoot *gardenv1beta1.Shoot) bool {
+	ignore := false
+	if value, ok := shoot.Annotations[common.GardenIgnoreAlerts]; ok {
+		ignore, _ = strconv.ParseBool(value)
+	}
+	return ignore
+}
+
 // GetShootCloudProviderWorkers retrieves the cloud-specific workers of the given Shoot.
 func GetShootCloudProviderWorkers(cloudProvider gardenv1beta1.CloudProvider, shoot *gardenv1beta1.Shoot) []gardenv1beta1.Worker {
 	var (
@@ -147,6 +159,10 @@ func GetShootCloudProviderWorkers(cloudProvider gardenv1beta1.CloudProvider, sho
 		for _, worker := range cloud.Metal.Workers {
 			workers = append(workers, worker.Worker)
 		}
+	case gardenv1beta1.CloudProviderPacket:
+		for _, worker := range cloud.Packet.Workers {
+			workers = append(workers, worker.Worker)
+		}
 	case gardenv1beta1.CloudProviderLocal:
 		workers = append(workers, gardenv1beta1.Worker{
 			Name:          "local",
@@ -173,8 +189,10 @@ func GetMachineImageNameFromShoot(cloudProvider gardenv1beta1.CloudProvider, sho
 		return shoot.Spec.Cloud.OpenStack.MachineImage.Name
 	case gardenv1beta1.CloudProviderMetal:
 		return shoot.Spec.Cloud.Metal.MachineImage.Name
+	case gardenv1beta1.CloudProviderPacket:
+		return shoot.Spec.Cloud.Packet.MachineImage.Name
 	case gardenv1beta1.CloudProviderLocal:
-		return "coreos"
+		return shoot.Spec.Cloud.Local.MachineImage.Name
 	}
 	return ""
 }
@@ -202,6 +220,8 @@ func GetMachineTypesFromCloudProfile(cloudProvider gardenv1beta1.CloudProvider, 
 		return profile.Spec.Azure.Constraints.MachineTypes
 	case gardenv1beta1.CloudProviderGCP:
 		return profile.Spec.GCP.Constraints.MachineTypes
+	case gardenv1beta1.CloudProviderPacket:
+		return profile.Spec.Packet.Constraints.MachineTypes
 	case gardenv1beta1.CloudProviderOpenStack:
 		for _, openStackMachineType := range profile.Spec.OpenStack.Constraints.MachineTypes {
 			machineTypes = append(machineTypes, openStackMachineType.MachineType)
@@ -251,91 +271,19 @@ func DetermineCloudProviderInShoot(cloudObj gardenv1beta1.Cloud) (gardenv1beta1.
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderMetal
 	}
+	if cloudObj.Packet != nil {
+		numClouds++
+		cloud = gardenv1beta1.CloudProviderPacket
+	}
 	if cloudObj.Local != nil {
 		numClouds++
 		cloud = gardenv1beta1.CloudProviderLocal
 	}
 
 	if numClouds != 1 {
-		return "", errors.New("cloud object must only contain exactly one field of aws/azure/gcp/openstack/local")
+		return "", errors.New("cloud object must only contain exactly one field of aws/azure/gcp/openstack/packet/local")
 	}
 	return cloud, nil
-}
-
-// InitCondition initializes a new Condition with an Unknown status.
-func InitCondition(conditionType gardenv1beta1.ConditionType, reason, message string) *gardenv1beta1.Condition {
-	if reason == "" {
-		reason = "ConditionInitialized"
-	}
-	if message == "" {
-		message = "The condition has been initialized but its semantic check has not been performed yet."
-	}
-	return &gardenv1beta1.Condition{
-		Type:               conditionType,
-		Status:             gardenv1beta1.ConditionUnknown,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: Now(),
-	}
-}
-
-// UpdatedCondition updates the properties of one specific condition.
-func UpdatedCondition(condition *gardenv1beta1.Condition, status gardenv1beta1.ConditionStatus, reason, message string) *gardenv1beta1.Condition {
-	newCondition := &gardenv1beta1.Condition{
-		Type:               condition.Type,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: condition.LastTransitionTime,
-		LastUpdateTime:     Now(),
-	}
-
-	if condition.Status != status {
-		newCondition.LastTransitionTime = Now()
-	}
-	return newCondition
-}
-
-func UpdatedConditionUnknownError(condition *gardenv1beta1.Condition, err error) *gardenv1beta1.Condition {
-	return UpdatedConditionUnknownErrorMessage(condition, err.Error())
-}
-
-func UpdatedConditionUnknownErrorMessage(condition *gardenv1beta1.Condition, message string) *gardenv1beta1.Condition {
-	return UpdatedCondition(condition, gardenv1beta1.ConditionUnknown, gardenv1beta1.ConditionCheckError, message)
-}
-
-// NewConditions initializes the provided conditions based on an existing list. If a condition type does not exist
-// in the list yet, it will be set to default values.
-func NewConditions(conditions []gardenv1beta1.Condition, conditionTypes ...gardenv1beta1.ConditionType) []*gardenv1beta1.Condition {
-	newConditions := []*gardenv1beta1.Condition{}
-
-	// We retrieve the current conditions in order to update them appropriately.
-	for _, conditionType := range conditionTypes {
-		if c := GetCondition(conditions, conditionType); c != nil {
-			newConditions = append(newConditions, c)
-			continue
-		}
-		newConditions = append(newConditions, InitCondition(conditionType, "", ""))
-	}
-
-	return newConditions
-}
-
-// GetCondition returns the condition with the given <conditionType> out of the list of <conditions>.
-// In case the required type could not be found, it returns nil.
-func GetCondition(conditions []gardenv1beta1.Condition, conditionType gardenv1beta1.ConditionType) *gardenv1beta1.Condition {
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			c := condition
-			return &c
-		}
-	}
-	return nil
-}
-
-// ConditionsNeedUpdate returns true if the <existingConditions> must be updated based on <newConditions>.
-func ConditionsNeedUpdate(existingConditions, newConditions []gardenv1beta1.Condition) bool {
-	return existingConditions == nil || !apiequality.Semantic.DeepEqual(newConditions, existingConditions)
 }
 
 // DetermineMachineImage finds the cloud specific machine image in the <cloudProfile> for the given <name> and
@@ -395,7 +343,14 @@ func DetermineMachineImage(cloudProfile gardenv1beta1.CloudProfile, name gardenv
 		for _, image := range cloudProfile.Spec.Alicloud.Constraints.MachineImages {
 			// The OR-case can be removed in a further version of Gardener. We need it to migrate from in-tree OS support
 			// to out-of-tree extensions.
-			if name := machineImageToString(image.Name); name == currentMachineImageName || (currentMachineImageName == "CoreOS" && name == "coreos-alicloud") {
+			if name := machineImageToString(image.Name); name == currentMachineImageName || (currentMachineImageName == "coreos" && name == "coreos-alicloud") {
+				ptr := image
+				return true, &ptr, nil
+			}
+		}
+	case gardenv1beta1.CloudProviderPacket:
+		for _, image := range cloudProfile.Spec.Packet.Constraints.MachineImages {
+			if image.Name == name {
 				ptr := image
 				return true, &ptr, nil
 			}
@@ -425,6 +380,9 @@ func UpdateMachineImage(cloudProvider gardenv1beta1.CloudProvider, machineImage 
 	case gardenv1beta1.CloudProviderMetal:
 		image := machineImage.(*gardenv1beta1.MetalMachineImage)
 		return func(s *gardenv1beta1.Cloud) { s.Metal.MachineImage = image }
+	case gardenv1beta1.CloudProviderPacket:
+		image := machineImage.(*gardenv1beta1.PacketMachineImage)
+		return func(s *gardenv1beta1.Cloud) { s.Packet.MachineImage = image }
 	case gardenv1beta1.CloudProviderAlicloud:
 		image := machineImage.(*gardenv1beta1.AlicloudMachineImage)
 		return func(s *gardenv1beta1.Cloud) { s.Alicloud.MachineImage = image }
@@ -474,6 +432,10 @@ func DetermineLatestKubernetesVersion(cloudProfile gardenv1beta1.CloudProfile, c
 		}
 	case gardenv1beta1.CloudProviderAlicloud:
 		for _, version := range cloudProfile.Spec.Alicloud.Constraints.Kubernetes.Versions {
+			versions = append(versions, version)
+		}
+	case gardenv1beta1.CloudProviderPacket:
+		for _, version := range cloudProfile.Spec.Packet.Constraints.Kubernetes.Versions {
 			versions = append(versions, version)
 		}
 	default:
@@ -730,29 +692,4 @@ func ReadShootedSeed(shoot *gardenv1beta1.Shoot) (*ShootedSeed, error) {
 	}
 
 	return shootedSeed, nil
-}
-
-// Coder is an error that may produce an ErrorCode visible to the outside.
-type Coder interface {
-	error
-	Code() gardenv1beta1.ErrorCode
-}
-
-// ExtractErrorCodes extracts all error codes from the given error by using utils.Errors
-func ExtractErrorCodes(err error) []gardenv1beta1.ErrorCode {
-	var codes []gardenv1beta1.ErrorCode
-	for _, err := range utils.Errors(err) {
-		if coder, ok := err.(Coder); ok {
-			codes = append(codes, coder.Code())
-		}
-	}
-	return codes
-}
-
-func FormatLastErrDescription(err error) string {
-	errString := err.Error()
-	if len(errString) > 0 {
-		errString = strings.ToUpper(string(errString[0])) + errString[1:]
-	}
-	return errString
 }

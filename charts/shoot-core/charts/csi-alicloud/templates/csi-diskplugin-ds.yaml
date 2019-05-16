@@ -16,40 +16,38 @@ spec:
   template:
     metadata:
       annotations:
-        # This, along with the CriticalAddonsOnly toleration below,
-        # marks the pod as a critical add-on, ensuring it gets
-        # priority scheduling and that its resources are reserved
-        # if it ever gets evicted.
-        scheduler.alpha.kubernetes.io/critical-pod: ''
-        checksum/secret-csi-diskplugin-alicloud: {{ include (print $.Template.BasePath "/credential-secret.yaml") . | sha256sum }}
+        checksum/secret-csi-diskplugin-alicloud: {{ include (print $.Template.BasePath "/csi-diskplugin-secret.yaml") . | sha256sum }}
       labels:
         app: csi-disk-plugin-alicloud
         origin: gardener
         garden.sapcloud.io/role: system-component
     spec:
-      priorityClassName: system-cluster-critical
+      priorityClassName: system-node-critical
       serviceAccount: csi-disk-plugin-alicloud
-      hostNetwork: true
-      hostPID: true
       tolerations:
       - key: CriticalAddonsOnly
         operator: Exists
       containers:
         - name: driver-registrar
-          image: {{ index .Values.images "csi-driver-registrar" }}
+          image: {{ index .Values.images "csi-node-driver-registrar" }} 
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/diskplugin.csi.alibabacloud.com /registration/diskplugin.csi.alibabacloud.com-reg.sock"]
           args:
             - "--v=5"
-            - "--csi-address=$(ADDRESS)"
+            - "--csi-address=/csi/csi.sock"
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/diskplugin.csi.alibabacloud.com/csi.sock
           env:
-            - name: ADDRESS
-              value: /var/lib/kubelet/plugins/csi-diskplugin/csi.sock
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
           volumeMounts:
-            - name: socket-dir
-              mountPath: /var/lib/kubelet/plugins/csi-diskplugin
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
         - name: csi-diskplugin
           securityContext:
             privileged: true
@@ -58,16 +56,11 @@ spec:
             allowPrivilegeEscalation: true
           image: {{ index .Values.images "csi-plugin-alicloud" }}
           args :
-            - "--nodeid=$(NODE_ID)"
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--v=5"
           env:
-            - name: NODE_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
             - name: CSI_ENDPOINT
-              value: unix://var/lib/kubelet/plugins/csi-diskplugin/csi.sock
+              value: unix://var/lib/kubelet/plugins/diskplugin.csi.alibabacloud.com/csi.sock
             - name: ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -80,51 +73,26 @@ spec:
                   key: accessKeySecret
           imagePullPolicy: Always
           volumeMounts:
-            - name: plugin-dir
-              mountPath: /var/lib/kubelet/plugins/csi-diskplugin
             - name: pods-mount-dir
-              mountPath: /var/lib/kubelet/pods
+              mountPath: /var/lib/kubelet
               mountPropagation: "Bidirectional"
             - mountPath: /dev
               name: host-dev
-            - mountPath: /sys
-              name: host-sys
-            - mountPath: /lib/modules
-              name: lib-modules
-              readOnly: true
-            - mountPath: /run/dbus
-              name: host-run
-              readOnly: true
-            - mountPath: /var/lib/kubelet/plugins/kubernetes.io/csi/pv
-              name: pv-mount-dir
-              mountPropagation: "Bidirectional"
+              mountPropagation: "HostToContainer"
       volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: DirectoryOrCreate
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/csi-diskplugin
+            path: /var/lib/kubelet/plugins/diskplugin.csi.alibabacloud.com
             type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:
-            path: /var/lib/kubelet/pods
+            path: /var/lib/kubelet
             type: Directory
-        - name: pv-mount-dir
-          hostPath:
-            path: /var/lib/kubelet/plugins/kubernetes.io/csi/pv
-            type: DirectoryOrCreate
-        - name: socket-dir
-          hostPath:
-            path: /var/lib/kubelet/plugins/csi-diskplugin
-            type: DirectoryOrCreate
         - name: host-dev
           hostPath:
             path: /dev
-        - name: host-run
-          hostPath:
-            path: /run/dbus
-        - name: host-sys
-          hostPath:
-            path: /sys
-        - name: lib-modules
-          hostPath:
-            path: /lib/modules
 {{- end -}}

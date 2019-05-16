@@ -16,6 +16,14 @@ package imagevector_test
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
+
+	"github.com/gardener/gardener/pkg/utils/test"
+
+	. "github.com/onsi/ginkgo/extensions/table"
+	"github.com/onsi/gomega/types"
 
 	. "github.com/gardener/gardener/pkg/utils/imagevector"
 
@@ -23,148 +31,302 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+func WithTempFile(pattern string, data []byte) (*os.File, func()) {
+	tmpFile, err := ioutil.TempFile("", pattern)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(ioutil.WriteFile(tmpFile.Name(), data, os.ModePerm)).To(Succeed())
+
+	return tmpFile, func() {
+		if err := tmpFile.Close(); err != nil {
+			GinkgoT().Logf("Could not close temp file %q: %v", tmpFile.Name(), err)
+		}
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			GinkgoT().Logf("Could not delete temp file %q: %v", tmpFile.Name(), err)
+		}
+	}
+}
+
+func stringPtr(s string) *string {
+	return &s
+}
+
 var _ = Describe("imagevector", func() {
+
 	Describe("> ImageVector", func() {
-		var vector ImageVector
+		var (
+			image1Src1Vector     ImageVector
+			image1Src1VectorJSON string
+			image1Src1VectorYAML string
 
-		BeforeEach(func() {
-			vector = ImageVector{}
+			k8s164               = "1.6.4"
+			k8s180               = "1.8.0"
+			k8s164RuntimeVersion = RuntimeVersion(k8s164)
+			k8s164TargetVersion  = TargetVersion(k8s164)
+			k8s180RuntimeVersion = RuntimeVersion(k8s180)
+			k8s180TargetVersion  = TargetVersion(k8s180)
+
+			tag1, tag2          string
+			repo1, repo2, repo3 string
+
+			greaterEquals16Smaller18, greaterEquals18 string
+
+			image1Name                                                             string
+			image1Src1, image1Src2, image1Src3, image1Src4, image1Src5, image1Src6 *ImageSource
+
+			image2Name string
+			image2Src1 *ImageSource
+
+			image3Name string
+			image3Src1 *ImageSource
+		)
+
+		resetValues := func() {
+			k8s164 = "1.6.4"
+			k8s180 = "1.8.0"
+			k8s164RuntimeVersion = RuntimeVersion(k8s164)
+			k8s164TargetVersion = TargetVersion(k8s164)
+			k8s180RuntimeVersion = RuntimeVersion(k8s180)
+			k8s180TargetVersion = TargetVersion(k8s180)
+
+			tag1 = "tag1"
+			tag2 = "tag2"
+
+			repo1 = "repo1"
+			repo2 = "repo2"
+			repo3 = "repo3"
+
+			greaterEquals16Smaller18 = ">= 1.6, < 1.8"
+			greaterEquals18 = ">= 1.8"
+
+			image1Name = "image1"
+			image1Src1 = &ImageSource{
+				Name:           image1Name,
+				Repository:     repo1,
+				Tag:            &tag1,
+				RuntimeVersion: &greaterEquals16Smaller18,
+			}
+			image1Src2 = &ImageSource{
+				Name:           image1Name,
+				Repository:     repo1,
+				Tag:            &tag1,
+				RuntimeVersion: &greaterEquals18,
+			}
+			image1Src3 = &ImageSource{
+				Name:           image1Name,
+				Repository:     repo2,
+				Tag:            &tag1,
+				RuntimeVersion: &greaterEquals16Smaller18,
+			}
+			image1Src4 = &ImageSource{
+				Name:           image1Name,
+				Repository:     repo1,
+				Tag:            &tag2,
+				RuntimeVersion: &greaterEquals16Smaller18,
+			}
+			image1Src5 = &ImageSource{
+				Name:       image1Name,
+				Repository: repo1,
+				Tag:        &tag1,
+			}
+			image1Src6 = &ImageSource{
+				Name:           image1Name,
+				Repository:     repo1,
+				RuntimeVersion: &greaterEquals16Smaller18,
+			}
+
+			image2Name = "image2"
+			image2Src1 = &ImageSource{
+				Name:           image2Name,
+				Repository:     repo2,
+				Tag:            &tag2,
+				RuntimeVersion: &greaterEquals16Smaller18,
+			}
+
+			image3Name = "image3"
+			image3Src1 = &ImageSource{
+				Name:       image3Name,
+				Repository: repo3,
+			}
+
+			image1Src1Vector = ImageVector{image1Src1}
+
+			image1Src1VectorJSON = fmt.Sprintf(`
+{
+	"images": [
+		{
+			"name": "%s",
+			"repository": "%s",
+			"tag": "%s",
+			"runtimeVersion": "%s"
+		}
+	]
+}`, image1Src1.Name, image1Src1.Repository, *image1Src1.Tag, *image1Src1.RuntimeVersion)
+
+			image1Src1VectorYAML = fmt.Sprintf(`
+images:
+  - name: "%s"
+    repository: "%s"
+    tag: "%s"
+    runtimeVersion: "%s"`, image1Src1.Name, image1Src1.Repository, *image1Src1.Tag, *image1Src1.RuntimeVersion)
+		}
+		resetValues()
+		BeforeEach(resetValues)
+
+		Describe("#Read", func() {
+			It("should successfully read a JSON image vector", func() {
+				vector, err := Read(strings.NewReader(image1Src1VectorJSON))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vector).To(Equal(image1Src1Vector))
+			})
+
+			It("should successfully read a YAML image vector", func() {
+				vector, err := Read(strings.NewReader(image1Src1VectorYAML))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vector).To(Equal(image1Src1Vector))
+			})
 		})
 
-		Describe("#FindImage", func() {
-			var (
-				k8s164 = "1.6.4"
-				k8s180 = "1.8.0"
+		Describe("#ReadFile", func() {
+			It("should successfully read the file and close it", func() {
+				tmpFile, cleanup := WithTempFile("imagevector", []byte(image1Src1VectorJSON))
+				defer cleanup()
 
-				imageSrc1 = &ImageSource{
-					Name:       "image1",
-					Repository: "repo1",
-					Tag:        "tag1",
-					Versions:   "",
-				}
-				imageSrc2 = &ImageSource{
-					Name:       "image1",
-					Repository: "repo1",
-					Tag:        "tag1",
-					Versions:   ">= 1.6",
-				}
-				imageSrc3 = &ImageSource{
-					Name:       "image3",
-					Repository: "repo3",
-					Tag:        "tag3",
-					Versions:   ">= 1.6, < 1.8",
-				}
-				imageSrc4 = &ImageSource{
-					Name:       "image3",
-					Repository: "repo3",
-					Tag:        "tag3",
-					Versions:   ">= 1.8",
-				}
-				imageSrc5 = &ImageSource{
-					Name:       "image5",
-					Repository: "repo5",
-				}
-			)
-
-			It("should return an error because no image was found", func() {
-				image, err := vector.FindImage("test", k8s164, k8s164)
-
-				Expect(err).To(HaveOccurred())
-				Expect(image).To(BeNil())
-			})
-
-			It("should return an image because it only exists once in the vector", func() {
-				vector = ImageVector{imageSrc1}
-
-				image, err := vector.FindImage(imageSrc1.Name, k8s164, k8s180)
-
+				vector, err := ReadFile(tmpFile.Name())
 				Expect(err).NotTo(HaveOccurred())
-				Expect(image).To(Equal(imageSrc1.ToImage(k8s180)))
-			})
-
-			It("should return an image which exists multiple times after it has checked the constraints (first image returned)", func() {
-				vector = ImageVector{imageSrc3, imageSrc4}
-
-				image, err := vector.FindImage(imageSrc3.Name, k8s164, k8s164)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(image).To(Equal(imageSrc3.ToImage(k8s164)))
-			})
-
-			It("should return an image which exists multiple times after it has checked the constraints (second image returned)", func() {
-				vector = ImageVector{imageSrc3, imageSrc4}
-
-				image, err := vector.FindImage(imageSrc3.Name, k8s180, k8s180)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(image).To(Equal(imageSrc4.ToImage(k8s180)))
-			})
-
-			It("should return an error for an image which exists multiple times after it has checked the constraints (no constraints met)", func() {
-				vector = ImageVector{imageSrc3, imageSrc4}
-
-				image, err := vector.FindImage(imageSrc3.Name, "1.5.9", "1.5.9")
-
-				Expect(err).To(HaveOccurred())
-				Expect(image).To(BeNil())
-			})
-
-			It("should return an image which exists multiple times (no version constraints provided)", func() {
-				vector = ImageVector{imageSrc1, imageSrc2}
-
-				image, err := vector.FindImage(imageSrc1.Name, k8s164, k8s164)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(image).To(Equal(imageSrc1.ToImage(k8s164)))
-			})
-
-			It("should return an image where the version was correctly applied", func() {
-				vector = ImageVector{imageSrc5}
-
-				image, err := vector.FindImage(imageSrc5.Name, k8s164, k8s164)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(image).To(Equal(imageSrc5.ToImage(k8s164)))
+				Expect(vector).To(Equal(image1Src1Vector))
 			})
 		})
+
+		DescribeTable("#Merge",
+			func(v1, v2, expected ImageVector) {
+				Expect(Merge(v1, v2)).To(Equal(expected))
+			},
+			Entry("no override",
+				ImageVector{image1Src1},
+				ImageVector{image1Src2},
+				ImageVector{image1Src1, image1Src2}),
+			Entry("one override, one addition",
+				ImageVector{image1Src1, image2Src1},
+				ImageVector{image1Src3, image3Src1},
+				ImageVector{image1Src3, image2Src1, image3Src1}),
+			Entry("tag is kept",
+				ImageVector{image1Src1},
+				ImageVector{image1Src6},
+				ImageVector{image1Src1}),
+			Entry("tag override",
+				ImageVector{image1Src1},
+				ImageVector{image1Src4},
+				ImageVector{image1Src4}),
+		)
+
+		Describe("#WithEnvOverride", func() {
+			It("should override the ImageVector with the settings of the env variable", func() {
+				var (
+					vector = ImageVector{image1Src3, image2Src1}
+				)
+				file, cleanup := WithTempFile("imagevector", []byte(image1Src1VectorJSON))
+				defer cleanup()
+				defer test.WithEnvVar(OverrideEnv, file.Name())()
+
+				Expect(WithEnvOverride(vector)).To(Equal(ImageVector{image1Src1, image2Src1}))
+			})
+
+			It("should keep the vector as-is if the env variable is not set", func() {
+				Expect(WithEnvOverride(image1Src1Vector)).To(Equal(image1Src1Vector))
+			})
+		})
+
+		DescribeTable("#FindImage",
+			func(vec ImageVector, name string, opts []FindOptionFunc, imageMatcher, errorMatcher types.GomegaMatcher) {
+				image, err := vec.FindImage(name, opts...)
+				Expect(err).To(errorMatcher)
+				Expect(image).To(imageMatcher)
+			},
+			Entry("no entries, no match",
+				ImageVector{},
+				image1Name,
+				nil,
+				BeNil(),
+				HaveOccurred()),
+			Entry("single entry, match with runtime wildcard",
+				ImageVector{image1Src1},
+				image1Name,
+				nil,
+				Equal(image1Src1.ToImage(nil)),
+				Not(HaveOccurred())),
+			Entry("single entry, match with runtime version",
+				ImageVector{image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s164RuntimeVersion},
+				Equal(image1Src1.ToImage(nil)),
+				Not(HaveOccurred())),
+			Entry("single entry, match with runtime and target version",
+				ImageVector{image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s164RuntimeVersion, k8s164TargetVersion},
+				Equal(image1Src1.ToImage(&k8s164)),
+				Not(HaveOccurred())),
+			Entry("single entry, match with runtime and non-runtime target version",
+				ImageVector{image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s164RuntimeVersion, k8s180TargetVersion},
+				Equal(image1Src1.ToImage(&k8s180)),
+				Not(HaveOccurred())),
+			Entry("single entry, name mismatch",
+				ImageVector{image1Src1},
+				image2Name,
+				nil,
+				BeNil(),
+				HaveOccurred()),
+			Entry("single entry, runtime version mismatch",
+				ImageVector{image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s180RuntimeVersion},
+				BeNil(),
+				HaveOccurred()),
+			Entry("single entry no runtime version, match with runtime wildcard",
+				ImageVector{image1Src5},
+				image1Name,
+				nil,
+				Equal(image1Src5.ToImage(nil)),
+				Not(HaveOccurred())),
+			Entry("single entry no runtime version, match with runtime version",
+				ImageVector{image1Src5},
+				image1Name,
+				[]FindOptionFunc{k8s180RuntimeVersion},
+				Equal(image1Src5.ToImage(nil)),
+				Not(HaveOccurred())),
+			Entry("two entries, match with runtime wildcard",
+				ImageVector{image1Src5, image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s180RuntimeVersion},
+				Equal(image1Src5.ToImage(nil)),
+				Not(HaveOccurred())),
+			Entry("two entries, match with runtime version",
+				ImageVector{image1Src5, image1Src1},
+				image1Name,
+				[]FindOptionFunc{k8s164RuntimeVersion},
+				Equal(image1Src1.ToImage(nil)),
+				Not(HaveOccurred())),
+		)
 
 		Describe("#FindImages", func() {
-			var (
-				k8s164 = "1.6.4"
-				k8s180 = "1.8.0"
+			It("should collect the found images in a map", func() {
+				v := ImageVector{image1Src1, image2Src1}
 
-				imageSrc1 = &ImageSource{
-					Name:       "image1",
-					Repository: "repo1",
-					Tag:        "tag1",
-					Versions:   "",
-				}
-				imageSrc2 = &ImageSource{
-					Name:       "image2",
-					Repository: "repo2",
-					Tag:        "tag2",
-					Versions:   "",
-				}
-			)
-
-			It("should return an error because one or more images was not found", func() {
-				images, err := vector.FindImages([]string{"test"}, k8s164, k8s164)
-
-				Expect(err).To(HaveOccurred())
-				Expect(images).To(BeNil())
+				images, err := FindImages(v, []string{image1Name, image2Name})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).To(Equal(map[string]*Image{
+					image1Name: image1Src1.ToImage(nil),
+					image2Name: image2Src1.ToImage(nil),
+				}))
 			})
 
-			It("should return an image because it only exists once in the vector", func() {
-				vector = ImageVector{imageSrc1, imageSrc2}
-				expectMap := map[string]interface{}{
-					"image1": imageSrc1.ToImage("").String(),
-					"image2": imageSrc2.ToImage("").String(),
-				}
+			It("should error if it couldn't find an image", func() {
+				v := ImageVector{image1Src1, image2Src1}
 
-				images, err := vector.FindImages([]string{imageSrc1.Name, imageSrc2.Name}, k8s164, k8s180)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(images).To(Equal(expectMap))
+				_, err := FindImages(v, []string{image1Name, image2Name, image3Name})
+				Expect(err).To(HaveOccurred())
 			})
 		})
 	})
@@ -180,7 +342,7 @@ var _ = Describe("imagevector", func() {
 				image := Image{
 					Name:       "my-image",
 					Repository: repo,
-					Tag:        tag,
+					Tag:        &tag,
 				}
 
 				Expect(image.String()).To(Equal(fmt.Sprintf("%s:%s", repo, tag)))
@@ -210,16 +372,16 @@ var _ = Describe("imagevector", func() {
 					source = ImageSource{
 						Name:       name,
 						Repository: repository,
-						Tag:        tag,
+						Tag:        &tag,
 					}
 				)
 
-				image := source.ToImage("1.8.0")
+				image := source.ToImage(stringPtr("1.8.0"))
 
 				Expect(image).To(Equal(&Image{
 					Name:       name,
 					Repository: repository,
-					Tag:        tag,
+					Tag:        &tag,
 				}))
 			})
 
@@ -235,12 +397,12 @@ var _ = Describe("imagevector", func() {
 					}
 				)
 
-				image := source.ToImage(version)
+				image := source.ToImage(&version)
 
 				Expect(image).To(Equal(&Image{
 					Name:       name,
 					Repository: repository,
-					Tag:        fmt.Sprintf("v%s", version),
+					Tag:        stringPtr(fmt.Sprintf("v%s", version)),
 				}))
 			})
 		})

@@ -110,7 +110,7 @@ func (v *ValidateShoot) ValidateInitialization() error {
 }
 
 // Admit validates the Shoot details against the referenced CloudProfile.
-func (v *ValidateShoot) Admit(a admission.Attributes) error {
+func (v *ValidateShoot) Admit(a admission.Attributes, o admission.ObjectInterfaces) error {
 	// Wait until the caches have been synced
 	if v.readyFunc == nil {
 		v.AssignReadyFunc(func() bool {
@@ -151,7 +151,7 @@ func (v *ValidateShoot) Admit(a admission.Attributes) error {
 		return apierrors.NewBadRequest(fmt.Sprintf("could not find referenced seed: %+v", err.Error()))
 	}
 
-	project, err := admissionutils.GetProject(shoot, v.projectLister)
+	project, err := admissionutils.GetProject(shoot.Namespace, v.projectLister)
 	if err != nil {
 		return apierrors.NewBadRequest(fmt.Sprintf("could not find referenced project: %+v", err.Error()))
 	}
@@ -208,6 +208,9 @@ func (v *ValidateShoot) Admit(a admission.Attributes) error {
 					},
 					GCP: &garden.GCPCloud{
 						MachineImage: &garden.GCPMachineImage{},
+					},
+					Packet: &garden.PacketCloud{
+						MachineImage: &garden.PacketMachineImage{},
 					},
 					OpenStack: &garden.OpenStackCloud{
 						MachineImage: &garden.OpenStackMachineImage{},
@@ -267,6 +270,17 @@ func (v *ValidateShoot) Admit(a admission.Attributes) error {
 		}
 		allErrs = validateGCP(validationContext)
 
+	case garden.CloudProviderLocal:
+		if shoot.Spec.Cloud.Local.MachineImage == nil {
+			image, err := getLocalMachineImage(shoot, cloudProfile)
+			if err != nil {
+				return apierrors.NewBadRequest(err.Error())
+			}
+			shoot.Spec.Cloud.Local.MachineImage = image
+		}
+		// No further validations for local shoots
+		allErrs = field.ErrorList{}
+
 	case garden.CloudProviderOpenStack:
 		if shoot.Spec.Cloud.OpenStack.MachineImage == nil {
 			image, err := getOpenStackMachineImage(shoot, cloudProfile)
@@ -276,6 +290,16 @@ func (v *ValidateShoot) Admit(a admission.Attributes) error {
 			shoot.Spec.Cloud.OpenStack.MachineImage = image
 		}
 		allErrs = validateOpenStack(validationContext)
+
+	case garden.CloudProviderPacket:
+		if shoot.Spec.Cloud.Packet.MachineImage == nil {
+			image, err := getPacketMachineImage(shoot, cloudProfile)
+			if err != nil {
+				return apierrors.NewBadRequest(err.Error())
+			}
+			shoot.Spec.Cloud.Packet.MachineImage = image
+		}
+		allErrs = validatePacket(validationContext)
 
 	case garden.CloudProviderAlicloud:
 		if shoot.Spec.Cloud.Alicloud.MachineImage == nil {
@@ -288,7 +312,7 @@ func (v *ValidateShoot) Admit(a admission.Attributes) error {
 		allErrs = validateAlicloud(validationContext)
 	}
 
-	dnsErrors, err := validateDNSConfiguration(v.shootLister, shoot.Name, shoot.Spec.DNS)
+	dnsErrors, err := validateDNSDomainUniqueness(v.shootLister, shoot.Name, shoot.Spec.DNS)
 	if err != nil {
 		return apierrors.NewInternalError(err)
 	}
@@ -454,6 +478,56 @@ func validateGCP(c *validationContext) field.ErrorList {
 	return allErrs
 }
 
+func validatePacket(c *validationContext) field.ErrorList {
+	var (
+		allErrs = field.ErrorList{}
+		path    = field.NewPath("spec", "cloud", "packet")
+	)
+
+	allErrs = append(allErrs, admissionutils.ValidateNetworkDisjointedness(c.seed.Spec.Networks, c.shoot.Spec.Cloud.Packet.Networks.K8SNetworks, path.Child("networks"))...)
+
+	if ok, validDNSProviders := validateDNSConstraints(c.cloudProfile.Spec.Packet.Constraints.DNSProviders, c.shoot.Spec.DNS.Provider, c.oldShoot.Spec.DNS.Provider); !ok {
+		allErrs = append(allErrs, field.NotSupported(field.NewPath("spec", "dns", "provider"), c.shoot.Spec.DNS.Provider, validDNSProviders))
+	}
+	if ok, validKubernetesVersions := validateKubernetesVersionConstraints(c.cloudProfile.Spec.Packet.Constraints.Kubernetes.Versions, c.shoot.Spec.Kubernetes.Version, c.oldShoot.Spec.Kubernetes.Version); !ok {
+		allErrs = append(allErrs, field.NotSupported(field.NewPath("spec", "kubernetes", "version"), c.shoot.Spec.Kubernetes.Version, validKubernetesVersions))
+	}
+	if ok, validMachineImages := validatePacketMachineImagesConstraints(c.cloudProfile.Spec.Packet.Constraints.MachineImages, c.shoot.Spec.Cloud.Packet.MachineImage, c.oldShoot.Spec.Cloud.Packet.MachineImage); !ok {
+		allErrs = append(allErrs, field.NotSupported(path.Child("machineImage"), *c.shoot.Spec.Cloud.Packet.MachineImage, validMachineImages))
+	}
+
+	for i, worker := range c.shoot.Spec.Cloud.Packet.Workers {
+		var oldWorker = garden.PacketWorker{}
+		for _, ow := range c.oldShoot.Spec.Cloud.Packet.Workers {
+			if ow.Name == worker.Name {
+				oldWorker = ow
+				break
+			}
+		}
+
+		idxPath := path.Child("workers").Index(i)
+		if ok, validMachineTypes := validateMachineTypes(c.cloudProfile.Spec.Packet.Constraints.MachineTypes, worker.MachineType, oldWorker.MachineType); !ok {
+			allErrs = append(allErrs, field.NotSupported(idxPath.Child("machineType"), worker.MachineType, validMachineTypes))
+		}
+		if ok, validVolumeTypes := validateVolumeTypes(c.cloudProfile.Spec.Packet.Constraints.VolumeTypes, worker.VolumeType, oldWorker.MachineType); !ok {
+			allErrs = append(allErrs, field.NotSupported(idxPath.Child("volumeType"), worker.VolumeType, validVolumeTypes))
+		}
+	}
+
+	for i, zone := range c.shoot.Spec.Cloud.Packet.Zones {
+		idxPath := path.Child("zones").Index(i)
+		if ok, validZones := validateZones(c.cloudProfile.Spec.Packet.Constraints.Zones, c.shoot.Spec.Cloud.Region, zone); !ok {
+			if len(validZones) == 0 {
+				allErrs = append(allErrs, field.Invalid(idxPath, c.shoot.Spec.Cloud.Region, "this region is not allowed"))
+			} else {
+				allErrs = append(allErrs, field.NotSupported(idxPath, zone, validZones))
+			}
+		}
+	}
+
+	return allErrs
+}
+
 func validateOpenStack(c *validationContext) field.ErrorList {
 	var (
 		allErrs = field.ErrorList{}
@@ -563,8 +637,12 @@ func validateAlicloud(c *validationContext) field.ErrorList {
 	return allErrs
 }
 
-func validateDNSConstraints(constraints []garden.DNSProviderConstraint, provider, oldProvider garden.DNSProvider) (bool, []string) {
-	if provider == oldProvider {
+func validateDNSConstraints(constraints []garden.DNSProviderConstraint, provider, oldProvider *string) (bool, []string) {
+	if apiequality.Semantic.DeepEqual(provider, oldProvider) {
+		return true, nil
+	}
+
+	if provider == nil {
 		return true, nil
 	}
 
@@ -572,7 +650,7 @@ func validateDNSConstraints(constraints []garden.DNSProviderConstraint, provider
 
 	for _, p := range constraints {
 		validValues = append(validValues, string(p.Name))
-		if p.Name == provider {
+		if p.Name == *provider {
 			return true, nil
 		}
 	}
@@ -580,14 +658,13 @@ func validateDNSConstraints(constraints []garden.DNSProviderConstraint, provider
 	return false, validValues
 }
 
-func validateDNSConfiguration(shootLister listers.ShootLister, name string, dns garden.DNS) (field.ErrorList, error) {
+func validateDNSDomainUniqueness(shootLister listers.ShootLister, name string, dns garden.DNS) (field.ErrorList, error) {
 	var (
 		allErrs = field.ErrorList{}
 		dnsPath = field.NewPath("spec", "dns", "domain")
 	)
 
 	if dns.Domain == nil {
-		allErrs = append(allErrs, field.Required(dnsPath, "domain field is required"))
 		return allErrs, nil
 	}
 
@@ -600,13 +677,48 @@ func validateDNSConfiguration(shootLister listers.ShootLister, name string, dns 
 		if shoot.Name == name {
 			continue
 		}
-		if domain := shoot.Spec.DNS.Domain; domain != nil && *domain == *dns.Domain {
+
+		domain := shoot.Spec.DNS.Domain
+		if domain == nil {
+			continue
+		}
+
+		// Prevent that this shoot uses the exact same domain of any other shoot in the system.
+		if *domain == *dns.Domain {
 			allErrs = append(allErrs, field.Duplicate(dnsPath, *dns.Domain))
+			break
+		}
+
+		// Prevent that this shoot uses a subdomain of the domain of any other shoot in the system.
+		if hasDomainIntersection(*domain, *dns.Domain) {
+			allErrs = append(allErrs, field.Forbidden(dnsPath, "the domain is already used by another shoot or it is a subdomain of an already used domain"))
 			break
 		}
 	}
 
 	return allErrs, nil
+}
+
+// hasDomainIntersection checks if domainA is a suffix of domainB or domainB is a suffix of domainA.
+func hasDomainIntersection(domainA, domainB string) bool {
+	if domainA == domainB {
+		return true
+	}
+
+	var short, long string
+	if len(domainA) > len(domainB) {
+		short = domainB
+		long = domainA
+	} else {
+		short = domainA
+		long = domainB
+	}
+
+	if !strings.HasPrefix(short, ".") {
+		short = fmt.Sprintf(".%s", short)
+	}
+
+	return strings.HasSuffix(long, short)
 }
 
 func validateKubernetesVersionConstraints(constraints []string, version, oldVersion string) (bool, []string) {
@@ -893,6 +1005,39 @@ func getGCPMachineImage(shoot *garden.Shoot, cloudProfile *garden.CloudProfile) 
 }
 
 func validateGCPMachineImagesConstraints(constraints []garden.GCPMachineImage, image, oldImage *garden.GCPMachineImage) (bool, []string) {
+	if apiequality.Semantic.DeepEqual(*image, *oldImage) {
+		return true, nil
+	}
+
+	validValues := []string{}
+
+	for _, v := range constraints {
+		validValues = append(validValues, fmt.Sprintf("%+v", v))
+		if apiequality.Semantic.DeepEqual(v, *image) {
+			return true, nil
+		}
+	}
+
+	return false, validValues
+}
+
+func getLocalMachineImage(shoot *garden.Shoot, cloudProfile *garden.CloudProfile) (*garden.LocalMachineImage, error) {
+	machineImages := cloudProfile.Spec.Local.Constraints.MachineImages
+	if len(machineImages) != 1 {
+		return nil, errors.New("must provide a value for .spec.cloud.local.machineImage as the referenced cloud profile contains more than one")
+	}
+	return &machineImages[0], nil
+}
+
+func getPacketMachineImage(shoot *garden.Shoot, cloudProfile *garden.CloudProfile) (*garden.PacketMachineImage, error) {
+	machineImages := cloudProfile.Spec.Packet.Constraints.MachineImages
+	if len(machineImages) != 1 {
+		return nil, errors.New("must provide a value for .spec.cloud.packet.machineImage as the referenced cloud profile contains more than one")
+	}
+	return &machineImages[0], nil
+}
+
+func validatePacketMachineImagesConstraints(constraints []garden.PacketMachineImage, image, oldImage *garden.PacketMachineImage) (bool, []string) {
 	if apiequality.Semantic.DeepEqual(*image, *oldImage) {
 		return true, nil
 	}

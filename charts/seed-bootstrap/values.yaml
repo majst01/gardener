@@ -28,7 +28,7 @@ prometheus:
         unit: m
       memory:
         base: 200
-        perObject: 36
+        perObject: 64
         weight: 5
         unit: Mi
 
@@ -36,6 +36,8 @@ allowedMetrics:
   cAdvisor:
   - container_cpu_cfs_periods_total
   - container_cpu_usage_seconds_total
+  - container_fs_reads_bytes_total
+  - container_fs_writes_bytes_total
   - container_fs_inodes_total
   - container_fs_limit_bytes
   - container_fs_usage_bytes
@@ -63,10 +65,12 @@ global:
     curator-es: image-repository:image-tag
     elasticsearch-oss: image-repository:image-tag
     fluentd-es: image-repository:image-tag
-    gardener-external-admission-controller: image-repository:image-tag
     kibana-oss: image-repository:image-tag
     pause-container: image-repository:image-tag
     prometheus: image-repository:image-tag
+    vpa-admission-controller: image-repository:image-tag
+    vpa-recommender: image-repository:image-tag
+    vpa-updater: image-repository:image-tag
 
   elasticsearchPorts:
     db: 9200
@@ -77,18 +81,17 @@ elastic-kibana-curator:
   curator:
     objectCount: 1
   elasticsearch:
-    elasticsearchReplicas: 1
-    elasticsearchVolumeSizeGB: 30
     objectCount: 1
 
 fluentd-es:
   enabled: true
-  images:
-
 
 alertmanager:
   emailConfigs: []
   storage: 1Gi
 
 cert-manager:
+  enabled: true
+
+vpa:
   enabled: true

@@ -15,33 +15,58 @@
 package botanist
 
 import (
+	"context"
+
 	"github.com/gardener/gardener/pkg/operation/common"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// DNSPurposeIngress is a constant for a DNS record used for the ingress domain name.
+const DNSPurposeIngress = "ingress"
+
 // EnsureIngressDNSRecord creates the respective wildcard DNS record for the nginx-ingress-controller.
-func (b *Botanist) EnsureIngressDNSRecord() error {
+func (b *Botanist) EnsureIngressDNSRecord(ctx context.Context) error {
 	if !b.Shoot.NginxIngressEnabled() || b.Shoot.IsHibernated {
-		return b.DestroyIngressDNSRecord()
+		return b.DestroyIngressDNSRecord(ctx)
 	}
 
-	loadBalancerIngress, _, err := common.GetLoadBalancerIngress(b.K8sShootClient, metav1.NamespaceSystem, "addons-nginx-ingress-controller")
+	loadBalancerIngress, err := common.GetLoadBalancerIngress(ctx, b.K8sShootClient.Client(), metav1.NamespaceSystem, "addons-nginx-ingress-controller")
 	if err != nil {
 		return err
 	}
-	return b.DeployDNSRecord("ingress", b.Shoot.GetIngressFQDN("*"), loadBalancerIngress, false)
+
+	if err := b.waitUntilDNSProviderReady(ctx, DNSPurposeExternal); err != nil {
+		return err
+	}
+
+	if err := b.deployDNSEntry(ctx, DNSPurposeIngress, b.Shoot.GetIngressFQDN("*"), loadBalancerIngress); err != nil {
+		return err
+	}
+
+	return b.deleteLegacyTerraformDNSResources(ctx, common.TerraformerPurposeIngressDNSDeprecated)
 }
 
 // DestroyIngressDNSRecord destroys the nginx-ingress resources created by Terraform.
-func (b *Botanist) DestroyIngressDNSRecord() error {
-	return b.DestroyDNSRecord("ingress", false)
+func (b *Botanist) DestroyIngressDNSRecord(ctx context.Context) error {
+	return b.deleteDNSEntry(ctx, DNSPurposeIngress)
 }
 
 // GenerateKubernetesDashboardConfig generates the values which are required to render the chart of
 // the kubernetes-dashboard properly.
 func (b *Botanist) GenerateKubernetesDashboardConfig() (map[string]interface{}, error) {
-	return common.GenerateAddonConfig(nil, b.Shoot.KubernetesDashboardEnabled()), nil
+	var (
+		enabled = b.Shoot.KubernetesDashboardEnabled()
+		values  map[string]interface{}
+	)
+
+	if enabled && b.Shoot.Info.Spec.Addons.KubernetesDashboard.AuthenticationMode != nil {
+		values = map[string]interface{}{
+			"authenticationMode": *b.Shoot.Info.Spec.Addons.KubernetesDashboard.AuthenticationMode,
+		}
+	}
+
+	return common.GenerateAddonConfig(values, enabled), nil
 }
 
 // GenerateKubeLegoConfig generates the values which are required to render the chart of

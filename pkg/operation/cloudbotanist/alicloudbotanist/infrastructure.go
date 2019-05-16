@@ -15,7 +15,12 @@
 package alicloudbotanist
 
 import (
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+	"github.com/gardener/gardener/pkg/client/alicloud"
 	"github.com/gardener/gardener/pkg/operation/common"
+	"github.com/gardener/gardener/pkg/operation/terraformer"
+	"github.com/gardener/gardener/pkg/utils/secrets"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // DeployInfrastructure kicks off a Terraform job which deploys the infrastructure.
@@ -50,8 +55,13 @@ func (b *AlicloudBotanist) DeployInfrastructure() error {
 		return err
 	}
 
+	vals, err := b.generateTerraformInfraConfig(createVPC, vpcID, natGatewayID, snatTableID, vpcCIDR)
+	if err != nil {
+		return err
+	}
+
 	return tf.SetVariablesEnvironment(b.generateTerraformInfraVariablesEnvironment()).
-		InitializeWith(b.ChartInitializer("alicloud-infra", b.generateTerraformInfraConfig(createVPC, vpcID, natGatewayID, snatTableID, vpcCIDR))).
+		InitializeWith(b.ChartInitializer("alicloud-infra", vals)).
 		Apply()
 }
 
@@ -85,6 +95,24 @@ func (b *AlicloudBotanist) DestroyBackupInfrastructure() error {
 	if err != nil {
 		return err
 	}
+
+	// Must clean snapshots before deleting the bucket
+	stateVariables, err := tf.GetStateOutputVariables(BucketName, StorageEndpoint)
+	if err != nil {
+		if terraformer.IsVariablesNotFoundError(err) {
+			b.Logger.Infof("Skipping Alicloud backup storage bucket deletion because no storage endpoint has been found in the Terraform state.")
+			return nil
+		}
+		return err
+	}
+
+	err = cleanSnapshots(stateVariables[BucketName], stateVariables[StorageEndpoint],
+		string(b.Seed.Secret.Data[AccessKeyID]), string(b.Seed.Secret.Data[AccessKeySecret]))
+	if err != nil {
+		return err
+	}
+
+	// Clean the bucket using terraformer
 	return tf.
 		SetVariablesEnvironment(b.generateTerraformBackupVariablesEnvironment()).
 		Destroy()
@@ -94,7 +122,7 @@ func (b *AlicloudBotanist) DestroyBackupInfrastructure() error {
 // are required to validate/apply/destroy the Terraform configuration. These environment must contain
 // Terraform variables which are prefixed with TF_VAR_.
 func (b *AlicloudBotanist) generateTerraformInfraVariablesEnvironment() map[string]string {
-	return common.GenerateTerraformVariablesEnvironment(b.Shoot.Secret, map[string]string{
+	return terraformer.GenerateVariablesEnvironment(b.Shoot.Secret, map[string]string{
 		"ACCESS_KEY_ID":     AccessKeyID,
 		"ACCESS_KEY_SECRET": AccessKeySecret,
 	})
@@ -102,7 +130,12 @@ func (b *AlicloudBotanist) generateTerraformInfraVariablesEnvironment() map[stri
 
 // generateTerraformInfraConfig creates the Terraform variables and the Terraform config (for the infrastructure)
 // and returns them (these values will be stored as a ConfigMap and a Secret in the Garden cluster.
-func (b *AlicloudBotanist) generateTerraformInfraConfig(createVPC bool, vpcID, natGatewayID, snatTableID, vpcCIDR string) map[string]interface{} {
+func (b *AlicloudBotanist) generateTerraformInfraConfig(createVPC bool, vpcID, natGatewayID, snatTableID, vpcCIDR string) (map[string]interface{}, error) {
+	chargeType, err := b.fetchEIPInternetChargeType()
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		sshSecret = b.Secrets["ssh-keypair"]
 		zones     = []map[string]interface{}{}
@@ -125,19 +158,39 @@ func (b *AlicloudBotanist) generateTerraformInfraConfig(createVPC bool, vpcID, n
 			"vpc": createVPC,
 		},
 		"vpc": map[string]interface{}{
-			"cidr":         vpcCIDR,
-			"id":           vpcID,
-			"natGatewayID": natGatewayID,
-			"snatTableID":  snatTableID,
+			"cidr":               vpcCIDR,
+			"id":                 vpcID,
+			"natGatewayID":       natGatewayID,
+			"snatTableID":        snatTableID,
+			"internetChargeType": chargeType,
 		},
 		"clusterName":  b.Shoot.SeedNamespace,
-		"sshPublicKey": string(sshSecret.Data["id_rsa.pub"]),
+		"sshPublicKey": string(sshSecret.Data[secrets.DataKeySSHAuthorizedKeys]),
 		"zones":        zones,
+	}, nil
+}
+
+func (b *AlicloudBotanist) fetchEIPInternetChargeType() (string, error) {
+	var (
+		vpcID = "vpc_id"
+	)
+	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
+	if err != nil {
+		return "", err
 	}
+	stateVariables, err := tf.GetStateOutputVariables(vpcID)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return alicloud.DefaultInternetChargeType, nil
+		}
+		return "", err
+	}
+
+	return b.AlicloudClient.GetEIPInternetChargeType(stateVariables[vpcID])
 }
 
 func (b *AlicloudBotanist) generateTerraformBackupVariablesEnvironment() map[string]string {
-	return common.GenerateTerraformVariablesEnvironment(b.Seed.Secret, map[string]string{
+	return terraformer.GenerateVariablesEnvironment(b.Seed.Secret, map[string]string{
 		"ACCESS_KEY_ID":     AccessKeyID,
 		"ACCESS_KEY_SECRET": AccessKeySecret,
 	})
@@ -151,6 +204,36 @@ func (b *AlicloudBotanist) generateTerraformBackupConfig() map[string]interface{
 		"bucket": map[string]interface{}{
 			"name": b.Operation.BackupInfrastructure.Name,
 		},
-		"clusterName": b.Operation.BackupInfrastructure.Name,
 	}
+}
+
+func cleanSnapshots(bucketName, storageEndpoint, accessKeyID, accessKeySecret string) error {
+	client, err := oss.New(storageEndpoint, accessKeyID, accessKeySecret)
+	if err != nil {
+		return err
+	}
+
+	bucket, err := client.Bucket(bucketName)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var snapshots []string
+		lsRes, err := bucket.ListObjects()
+		if err != nil {
+			return err
+		}
+		for _, object := range lsRes.Objects {
+			snapshots = append(snapshots, object.Key)
+		}
+		_, err = bucket.DeleteObjects(snapshots)
+		if err != nil {
+			return err
+		}
+		if !lsRes.IsTruncated {
+			break
+		}
+	}
+	return nil
 }

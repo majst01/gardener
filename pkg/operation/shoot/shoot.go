@@ -15,23 +15,30 @@
 package shoot
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Masterminds/semver"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	gardenv1beta1 "github.com/gardener/gardener/pkg/apis/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1/helper"
 	gardeninformers "github.com/gardener/gardener/pkg/client/garden/informers/externalversions/garden/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/operation/common"
+	"github.com/gardener/gardener/pkg/operation/garden"
 	"github.com/gardener/gardener/pkg/utils"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // New takes a <k8sGardenClient>, the <k8sGardenInformers> and a <shoot> manifest, and creates a new Shoot representation.
 // It will add the CloudProfile, the cloud provider secret, compute the internal cluster domain and identify the cloud provider.
-func New(k8sGardenClient kubernetes.Interface, k8sGardenInformers gardeninformers.Interface, shoot *gardenv1beta1.Shoot, projectName, internalDomain string) (*Shoot, error) {
+func New(k8sGardenClient kubernetes.Interface, k8sGardenInformers gardeninformers.Interface, shoot *gardenv1beta1.Shoot, projectName, internalDomain string, defaultDomains []*garden.DefaultDomain) (*Shoot, error) {
 	var (
 		secret *corev1.Secret
 		err    error
@@ -56,21 +63,22 @@ func New(k8sGardenClient kubernetes.Interface, k8sGardenInformers gardeninformer
 		Secret:       secret,
 		CloudProfile: cloudProfile,
 
-		SeedNamespace:         ComputeTechnicalID(projectName, shoot),
-		InternalClusterDomain: internalDomain,
+		SeedNamespace: ComputeTechnicalID(projectName, shoot),
+
+		InternalClusterDomain: ConstructInternalClusterDomain(shoot.Name, projectName, internalDomain),
+		ExternalClusterDomain: ConstructExternalClusterDomain(shoot),
 
 		IsHibernated:           helper.IsShootHibernated(shoot),
 		WantsClusterAutoscaler: false,
 	}
-
 	shootObj.CloudConfigMap = make(map[string]CloudConfig, len(shootObj.GetWorkerNames()))
 
-	// Determine the external Shoot cluster domain, i.e. the domain which will be put into the Kubeconfig handed out
-	// to the user.
-	if *(shoot.Spec.DNS.Domain) != gardenv1beta1.DefaultDomain {
-		extDomain := fmt.Sprintf("api.%s", *(shoot.Spec.DNS.Domain))
-		shootObj.ExternalClusterDomain = &extDomain
+	// Determine information about external domain for shoot cluster.
+	externalDomain, err := ConstructExternalDomain(context.TODO(), k8sGardenClient.Client(), shoot, secret, defaultDomains)
+	if err != nil {
+		return nil, err
 	}
+	shootObj.ExternalDomain = externalDomain
 
 	// Determine the cloud provider kind of this Shoot object.
 	cloudProvider, err := helper.DetermineCloudProviderInShoot(shoot.Spec.Cloud)
@@ -90,7 +98,6 @@ func New(k8sGardenClient kubernetes.Interface, k8sGardenInformers gardeninformer
 	if err != nil {
 		return nil, err
 	}
-
 	shootObj.WantsClusterAutoscaler = needsAutoscaler
 
 	return shootObj, nil
@@ -131,7 +138,7 @@ func (s *Shoot) GetNodeCount() int {
 }
 
 // GetK8SNetworks returns the Kubernetes network CIDRs for the Shoot cluster.
-func (s *Shoot) GetK8SNetworks() *gardenv1beta1.K8SNetworks {
+func (s *Shoot) GetK8SNetworks() *gardencorev1alpha1.K8SNetworks {
 	switch s.CloudProvider {
 	case gardenv1beta1.CloudProviderAWS:
 		return &s.Info.Spec.Cloud.AWS.Networks.K8SNetworks
@@ -152,7 +159,7 @@ func (s *Shoot) GetK8SNetworks() *gardenv1beta1.K8SNetworks {
 }
 
 // GetPodNetwork returns the pod network CIDR for the Shoot cluster.
-func (s *Shoot) GetPodNetwork() gardenv1beta1.CIDR {
+func (s *Shoot) GetPodNetwork() gardencorev1alpha1.CIDR {
 	if k8sNetworks := s.GetK8SNetworks(); k8sNetworks != nil {
 		return *k8sNetworks.Pods
 	}
@@ -160,7 +167,7 @@ func (s *Shoot) GetPodNetwork() gardenv1beta1.CIDR {
 }
 
 // GetServiceNetwork returns the service network CIDR for the Shoot cluster.
-func (s *Shoot) GetServiceNetwork() gardenv1beta1.CIDR {
+func (s *Shoot) GetServiceNetwork() gardencorev1alpha1.CIDR {
 	if k8sNetworks := s.GetK8SNetworks(); k8sNetworks != nil {
 		return *k8sNetworks.Services
 	}
@@ -168,7 +175,7 @@ func (s *Shoot) GetServiceNetwork() gardenv1beta1.CIDR {
 }
 
 // GetNodeNetwork returns the node network CIDR for the Shoot cluster.
-func (s *Shoot) GetNodeNetwork() gardenv1beta1.CIDR {
+func (s *Shoot) GetNodeNetwork() gardencorev1alpha1.CIDR {
 	if k8sNetworks := s.GetK8SNetworks(); k8sNetworks != nil {
 		return *k8sNetworks.Nodes
 	}
@@ -233,11 +240,22 @@ func (s *Shoot) ComputeAPIServerURL(runsInSeed, useInternalClusterDomain bool) s
 		return common.KubeAPIServerDeploymentName
 	}
 
-	if dnsProvider := s.Info.Spec.DNS.Provider; dnsProvider == gardenv1beta1.DNSUnmanaged || (dnsProvider != gardenv1beta1.DNSUnmanaged && useInternalClusterDomain) {
+	if dnsProvider := s.Info.Spec.DNS.Provider; dnsProvider != nil && *dnsProvider == gardenv1beta1.DNSUnmanaged {
+		return s.InternalClusterDomain
+	}
+
+	if useInternalClusterDomain {
 		return s.InternalClusterDomain
 	}
 
 	return *(s.ExternalClusterDomain)
+}
+
+// IPVSEnabled returns true if IPVS is enabled for the shoot.
+func (s *Shoot) IPVSEnabled() bool {
+	return s.Info.Spec.Kubernetes.KubeProxy != nil &&
+		s.Info.Spec.Kubernetes.KubeProxy.Mode != nil &&
+		*s.Info.Spec.Kubernetes.KubeProxy.Mode == gardenv1beta1.ProxyModeIPVS
 }
 
 // ComputeTechnicalID determines the technical id of that Shoot which is later used for the name of the
@@ -252,4 +270,65 @@ func ComputeTechnicalID(projectName string, shoot *gardenv1beta1.Shoot) string {
 
 	// New clusters shall be created with the new technical id (double hyphens).
 	return fmt.Sprintf("shoot--%s--%s", projectName, shoot.Name)
+}
+
+// ConstructInternalClusterDomain constructs the domain pointing to the kube-apiserver of a Shoot cluster
+// which is only used for internal purposes (all kubeconfigs except the one which is received by the
+// user will only talk with the kube-apiserver via this domain). In case the given <internalDomain>
+// already contains "internal", the result is constructed as "api.<shootName>.<shootProject>.<internalDomain>."
+// In case it does not, the word "internal" will be appended, resulting in
+// "api.<shootName>.<shootProject>.internal.<internalDomain>".
+func ConstructInternalClusterDomain(shootName, shootProject, internalDomain string) string {
+	if strings.Contains(internalDomain, common.InternalDomainKey) {
+		return fmt.Sprintf("api.%s.%s.%s", shootName, shootProject, internalDomain)
+	}
+	return fmt.Sprintf("api.%s.%s.%s.%s", shootName, shootProject, common.InternalDomainKey, internalDomain)
+}
+
+// ConstructExternalClusterDomain constructs the external Shoot cluster domain, i.e. the domain which will be put
+// into the Kubeconfig handed out to the user.
+func ConstructExternalClusterDomain(shoot *gardenv1beta1.Shoot) *string {
+	if shoot.Spec.DNS.Domain == nil {
+		return nil
+	}
+
+	domain := fmt.Sprintf("api.%s", *(shoot.Spec.DNS.Domain))
+	return &domain
+}
+
+// ConstructExternalDomain constructs an object containing all relevant information of the external domain that
+// shall be used for a shoot cluster - based on the configuration of the Garden cluster and the shoot itself.
+func ConstructExternalDomain(ctx context.Context, client client.Client, shoot *gardenv1beta1.Shoot, shootSecret *corev1.Secret, defaultDomains []*garden.DefaultDomain) (*ExternalDomain, error) {
+	externalClusterDomain := ConstructExternalClusterDomain(shoot)
+	if externalClusterDomain == nil {
+		return nil, nil
+	}
+
+	var (
+		externalDomain = &ExternalDomain{Domain: *shoot.Spec.DNS.Domain}
+		defaultDomain  = garden.DomainIsDefaultDomain(*externalClusterDomain, defaultDomains)
+	)
+
+	switch {
+	case shoot.Spec.DNS.SecretName != nil && shoot.Spec.DNS.Provider != nil:
+		secret := &corev1.Secret{}
+		if err := client.Get(ctx, kutil.Key(shoot.Namespace, *shoot.Spec.DNS.SecretName), secret); err != nil {
+			return nil, err
+		}
+		externalDomain.SecretData = secret.Data
+		externalDomain.Provider = *shoot.Spec.DNS.Provider
+
+	case defaultDomain != nil:
+		externalDomain.SecretData = defaultDomain.SecretData
+		externalDomain.Provider = defaultDomain.Provider
+
+	case shoot.Spec.DNS.Provider != nil && shoot.Spec.DNS.SecretName == nil:
+		externalDomain.SecretData = shootSecret.Data
+		externalDomain.Provider = *shoot.Spec.DNS.Provider
+
+	default:
+		return nil, fmt.Errorf("unable to figure out which secret should be used for dns")
+	}
+
+	return externalDomain, nil
 }

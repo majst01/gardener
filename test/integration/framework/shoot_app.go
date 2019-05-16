@@ -27,11 +27,13 @@ import (
 	"time"
 
 	"github.com/gardener/gardener/pkg/apis/garden/v1beta1"
+	"github.com/gardener/gardener/pkg/apis/garden/v1beta1/helper"
 	"github.com/gardener/gardener/pkg/chartrenderer"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/operation/common"
 	shootop "github.com/gardener/gardener/pkg/operation/shoot"
 	"github.com/gardener/gardener/pkg/utils/kubernetes/health"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -53,18 +55,18 @@ const (
 // NewGardenTestOperation initializes a new test operation from created shoot Objects that can be used to issue commands against seeds and shoots
 func NewGardenTestOperation(ctx context.Context, k8sGardenClient kubernetes.Interface, logger logrus.FieldLogger, shoot *v1beta1.Shoot) (*GardenerTestOperation, error) {
 	if err := k8sGardenClient.Client().Get(ctx, client.ObjectKey{Namespace: shoot.Namespace, Name: shoot.Name}, shoot); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get Shoot in Garden cluster")
 	}
 
 	seed := &v1beta1.Seed{}
 	err := k8sGardenClient.Client().Get(ctx, client.ObjectKey{Name: *shoot.Spec.Cloud.Seed}, seed)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get Seed from Shoot in Garden cluster")
 	}
 
 	ns := &corev1.Namespace{}
 	if err := k8sGardenClient.Client().Get(ctx, client.ObjectKey{Name: shoot.Namespace}, ns); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get the Shoot namespace in Garden cluster")
 	}
 
 	if ns.Labels == nil {
@@ -77,18 +79,18 @@ func NewGardenTestOperation(ctx context.Context, k8sGardenClient kubernetes.Inte
 
 	project := &v1beta1.Project{}
 	if err := k8sGardenClient.Client().Get(ctx, client.ObjectKey{Name: projectName}, project); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get Project in Garden cluster")
 	}
 
 	seedSecretRef := seed.Spec.SecretRef
 	seedClient, err := kubernetes.NewClientFromSecret(k8sGardenClient, seedSecretRef.Namespace, seedSecretRef.Name, client.Options{})
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not construct Seed client")
 	}
 
 	k8sShootClient, err := kubernetes.NewClientFromSecret(seedClient, shootop.ComputeTechnicalID(project.Name, shoot), v1beta1.GardenerName, client.Options{})
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not construct Shoot client")
 	}
 
 	return &GardenerTestOperation{
@@ -250,8 +252,13 @@ func (o *GardenerTestOperation) WaitUntilGuestbookAppIsAvailable(ctx context.Con
 	}, ctx.Done())
 }
 
+// GetCloudProvider returns the cloud provider for the shoot
+func (o *GardenerTestOperation) GetCloudProvider() (v1beta1.CloudProvider, error) {
+	return helper.DetermineCloudProviderInShoot(o.Shoot.Spec.Cloud)
+}
+
 // DownloadChartArtifacts downloads a helm chart from helm stable repo url available in resources/repositories
-func (o *GardenerTestOperation) DownloadChartArtifacts(ctx context.Context, helm Helm, chartRepoDestination, chartNameToDownload string) error {
+func (o *GardenerTestOperation) DownloadChartArtifacts(ctx context.Context, helm Helm, chartRepoDestination, chartNameToDownload, chartVersionToDownload string) error {
 	exists, err := Exists(chartRepoDestination)
 	if err != nil {
 		return err
@@ -281,7 +288,7 @@ func (o *GardenerTestOperation) DownloadChartArtifacts(ctx context.Context, helm
 	}
 
 	if !chartDownloaded {
-		chartPath, err = downloadChart(ctx, chartNameToDownload, chartRepoDestination, stableRepo.URL, HelmAccess{
+		chartPath, err = downloadChart(ctx, chartNameToDownload, chartVersionToDownload, chartRepoDestination, stableRepo.URL, HelmAccess{
 			HelmPath: helm,
 		})
 		if err != nil {
@@ -293,14 +300,19 @@ func (o *GardenerTestOperation) DownloadChartArtifacts(ctx context.Context, helm
 }
 
 // DeployChart deploys it on the test shoot
-func (o *GardenerTestOperation) DeployChart(ctx context.Context, namespace, chartRepoDestination, chartNameToDeploy string) error {
-	renderer, err := chartrenderer.New(o.ShootClient.Kubernetes())
+func (o *GardenerTestOperation) DeployChart(ctx context.Context, namespace, chartRepoDestination, chartNameToDeploy string, values map[string]interface{}) error {
+	renderer, err := chartrenderer.NewForConfig(o.ShootClient.RESTConfig())
 	if err != nil {
 		return err
 	}
+	applier, err := kubernetes.NewApplierForConfig(o.ShootClient.RESTConfig())
+	if err != nil {
+		return err
+	}
+	chartApplier := kubernetes.NewChartApplier(renderer, applier)
 
 	chartPathToRender := filepath.Join(chartRepoDestination, chartNameToDeploy)
-	return common.ApplyChartInNamespace(ctx, o.ShootClient, renderer, chartPathToRender, chartNameToDeploy, namespace, nil, nil)
+	return chartApplier.ApplyChartInNamespace(ctx, chartPathToRender, namespace, chartNameToDeploy, values, nil)
 }
 
 // EnsureDirectories creates the repository directory which holds the repositories.yaml config file
@@ -372,8 +384,8 @@ func (o *GardenerTestOperation) GetElasticsearchLogs(ctx context.Context, elasti
 	}))
 
 	now := time.Now()
-	formattedDate := fmt.Sprintf("%d.%02d.%d", now.Year(), now.Month(), now.Day())
-	command := fmt.Sprintf("curl http://localhost:%d/logstash-%s/_search?q=kubernetes.pod_name:%s", elasticsearchPort, formattedDate, podName)
+	index := fmt.Sprintf("logstash-%d.%02d.%02d", now.Year(), now.Month(), now.Day())
+	command := fmt.Sprintf("curl http://localhost:%d/%s/_search?q=kubernetes.pod_name:%s", elasticsearchPort, index, podName)
 	reader, err := o.PodExecByLabel(ctx, elasticsearchLabels, elasticsearchLogging,
 		command, elasticsearchNamespace, client)
 	if err != nil {
