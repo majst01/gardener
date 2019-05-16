@@ -6,11 +6,7 @@
     values=yaml.load(open(context.get("values", "")), Loader=yaml.Loader)
 
   if context.get("cloud", "") == "":
-<<<<<<< HEAD
     raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,metal,packet,local} flag")
-=======
-    raise Exception("missing --var cloud={aws,azure,gcp,alicloud,openstack,packet,local} flag")
->>>>>>> origin/master
 
   def value(path, default):
     keys=str.split(path, ".")

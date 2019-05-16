@@ -391,17 +391,12 @@ spec:
   #     SomeKubernetesFeature: true
   % endif
   dns:
-<<<<<<< HEAD
-    provider: ${value("spec.dns.provider", "aws-route53") if cloud not in  ["local", "metal"] else "unmanaged"}
-    domain: ${value("spec.dns.domain", value("metadata.name", "johndoe-" + cloud) + "." + value("metadata.namespace", "garden-dev") + ".example.com") if cloud != "local" else "<minikube-ip>.nip.io"}<% hibernation = value("spec.hibernation", {}) %>
-=======
-  % if cloud != "local":
+  % if cloud not in  ["local", "metal"]:
   # provider: ${value("spec.dns.provider", "aws-route53")}
   % else:
     provider: unmanaged
   % endif
     domain: ${value("spec.dns.domain", value("metadata.name", "johndoe-" + cloud) + "." + value("metadata.namespace", "garden-dev") + ".example.com") if cloud != "local" else "<local-kubernetes-ip>.nip.io"}<% hibernation = value("spec.hibernation", {}) %>
->>>>>>> origin/master
   % if hibernation != {}:
   hibernation: ${yaml.dump(hibernation, width=10000, default_flow_style=None)}
   % else:
