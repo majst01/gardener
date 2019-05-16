@@ -22,12 +22,15 @@ helm upgrade \
     --set tls= \
     --namespace garden \
     etcd ~/dev/etcd-backup-restore/chart
+
+
+# This points docker to push images to the docker daemon inside minikube
 eval $(minikube docker-env)
 
-# build gardener images
+# build gardener images --> pushed to docker daemon inside minikube
 make docker-images 
 
-# build machine-controller-manager image
+# build machine-controller-manager image --> pushed to docker daemon inside minikube
 cd ~/go/src/github.com/gardener/machine-controller-manager \
     && make docker-images \
     && cd -
