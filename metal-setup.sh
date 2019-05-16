@@ -6,7 +6,7 @@ minikube start \
 echo "Waiting for minikube to be ready"
 timeout --foreground 180 bash -c 'until [ "$(kubectl get pods --all-namespaces)" != "" ]; do echo -n "." && sleep 3; done'
 
-helm init
+helm init --history-max 200
 echo "Waiting for tiller to be ready"
 timeout --foreground 180 bash -c 'until [ "$(helm status)" != "release name is required" ]; do echo -n "." && sleep 3; done'
 
@@ -32,8 +32,8 @@ cd ~/go/src/github.com/gardener/machine-controller-manager \
     && make docker-images \
     && cd -
 
-GARDENER_RELEASE=0.18.0-dev
-MACHINE_CONTROLLER_RELEASE=0.14.0-dev
+GARDENER_RELEASE=0.23.0-dev
+MACHINE_CONTROLLER_RELEASE=0.18.0-dev
 cat <<EOF > gardener-values.yaml
 global:
   apiserver:
@@ -62,7 +62,7 @@ kubectl describe -f example/30-cloudprofile-metal.yaml
 
 
 KUBECONFIG=$(kubectl config view --flatten=true | base64 -w 0)
-METAL_API_URL=$(echo 192.168.122.1:8080 | base64)
+METAL_API_URL=$(echo metal.test.fi-ts.io | base64)
 METAL_API_KEY=$(echo "your secret metal api token" | base64)
 cat <<EOF > example/40-secret-seed-metal.yaml
 ---

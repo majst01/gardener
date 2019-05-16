@@ -15,23 +15,25 @@ spec:
       - name: unmanaged
       kubernetes:
         versions:
-        - 1.13.3
+        - 1.14.1
       loadBalancerProviders:
       - name: metallb
       machineImages:
       - name: ubuntu
         image: ubuntu-18.04
+      - name: ubuntu
+        image: ubuntu-19.04
       - name: alpine
         image: alpine-3.9
       machineTypes:
       - name: t1-small-x86
-        cpu: "1"
+        cpu: "4"
         gpu: "0"
-        memory: 1Gi
+        memory: 8Gi
         usable: true
         volumeType: default
         volumeSize: 20Gi
       zones:
-      - region: vagrant-lab
+      - region: fra-equ01
         names:
-        - vagrant-lab
+        - fra-equ01
