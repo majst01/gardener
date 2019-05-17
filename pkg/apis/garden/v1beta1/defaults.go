@@ -112,9 +112,6 @@ func SetDefaults_Shoot(obj *Shoot) {
 		if cloud.Metal.Networks.Services == nil {
 			obj.Spec.Cloud.Metal.Networks.Services = &defaultServiceCIDR
 		}
-		if cloud.Metal.Networks.Nodes == nil && len(cloud.Metal.Networks.Workers) > 0 {
-			obj.Spec.Cloud.Metal.Networks.Nodes = &cloud.Metal.Networks.Workers[0]
-		}
 	}
 	if cloud.Packet != nil {
 		if cloud.Packet.Networks.Pods == nil {

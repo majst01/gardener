@@ -3783,7 +3783,6 @@ func autoConvert_v1beta1_MetalNetworks_To_garden_MetalNetworks(in *MetalNetworks
 	if err := s.Convert(&in.K8SNetworks, &out.K8SNetworks, 0); err != nil {
 		return err
 	}
-	out.Workers = *(*[]core.CIDR)(unsafe.Pointer(&in.Workers))
 	return nil
 }
 
@@ -3797,7 +3796,6 @@ func autoConvert_garden_MetalNetworks_To_v1beta1_MetalNetworks(in *garden.MetalN
 	if err := s.Convert(&in.K8SNetworks, &out.K8SNetworks, 0); err != nil {
 		return err
 	}
-	out.Workers = *(*[]v1alpha1.CIDR)(unsafe.Pointer(&in.Workers))
 	return nil
 }
 

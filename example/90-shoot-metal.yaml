@@ -7,15 +7,13 @@ metadata:
 spec:
   cloud:
     profile: metal
-    region: vagrant-lab
+    region: fra-equ01
     secretBindingRef:
       name: core-metal
     metal:
       loadBalancerProvider: metallb
-      networks:
-      # router:
-      #   id: 1234
-        workers: ['10.250.0.0/19']
+      networks: 
+        nodes: "192.168.1.0/24"
       workers:
       - name: cpu-worker
         machineType: t1-small-x86
@@ -23,9 +21,12 @@ spec:
         autoScalerMax: 2
         maxSurge: 1
         maxUnavailable: 0
-      zones: ['vagrant-lab']
+      machineImage: 
+        name: "ubuntu"
+        image: "ubuntu-19.04"
+      zones: ['fra-equ01']
   kubernetes:
-    version: 1.13.3
+    version: 1.14.1
     allowPrivilegedContainers: true # 'true' means that all authenticated users can use the "gardener.privileged" PodSecurityPolicy, allowing full unrestricted access to Pod features.
   # kubeAPIServer:
   #   featureGates:

@@ -2167,11 +2167,6 @@ func (in *MetalMachineType) DeepCopy() *MetalMachineType {
 func (in *MetalNetworks) DeepCopyInto(out *MetalNetworks) {
 	*out = *in
 	in.K8SNetworks.DeepCopyInto(&out.K8SNetworks)
-	if in.Workers != nil {
-		in, out := &in.Workers, &out.Workers
-		*out = make([]core.CIDR, len(*in))
-		copy(*out, *in)
-	}
 	return
 }
 

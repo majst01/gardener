@@ -4763,7 +4763,7 @@ func schema_pkg_apis_garden_v1beta1_MetalCloud(ref common.ReferenceCallback) com
 							Ref:         ref("github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalMachineImage"),
 						},
 					},
-					"Networks": {
+					"networks": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Networks holds information about the Kubernetes and infrastructure networks.",
 							Ref:         ref("github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalNetworks"),
@@ -4797,7 +4797,7 @@ func schema_pkg_apis_garden_v1beta1_MetalCloud(ref common.ReferenceCallback) com
 						},
 					},
 				},
-				Required: []string{"loadBalancerProvider", "Networks", "workers", "zones"},
+				Required: []string{"loadBalancerProvider", "networks", "workers", "zones"},
 			},
 		},
 		Dependencies: []string{
@@ -5009,31 +5009,30 @@ func schema_pkg_apis_garden_v1beta1_MetalNetworks(ref common.ReferenceCallback) 
 				Description: "MetalNetworks holds information about the Kubernetes and infrastructure networks.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
-					"K8SNetworks": {
+					"nodes": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/gardener/gardener/pkg/apis/core/v1alpha1.K8SNetworks"),
+							Description: "Nodes is the CIDR of the node network.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
-					"Workers": {
+					"pods": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Workers is a CIDR of a worker subnet (private) to create (used for the VMs).",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Type:   []string{"string"},
-										Format: "",
-									},
-								},
-							},
+							Description: "Pods is the CIDR of the pod network.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"services": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Services is the CIDR of the service network.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 				},
-				Required: []string{"K8SNetworks", "Workers"},
 			},
 		},
-		Dependencies: []string{
-			"github.com/gardener/gardener/pkg/apis/core/v1alpha1.K8SNetworks"},
 	}
 }
 

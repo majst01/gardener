@@ -1377,26 +1377,6 @@ func validateCloud(cloud garden.Cloud, fldPath *field.Path) field.ErrorList {
 			return allErrs
 		}
 
-		nodes, _, _, networkErrors := transformK8SNetworks(metal.Networks.K8SNetworks, metalPath.Child("networks"))
-		allErrs = append(allErrs, networkErrors...)
-
-		if len(metal.Networks.Workers) != zoneCount {
-			allErrs = append(allErrs, field.Invalid(metalPath.Child("networks", "workers"), metal.Networks.Workers, "must specify as many workers networks as zones"))
-		}
-
-		workerCIDRs := make([]cidrvalidation.CIDR, 0, len(metal.Networks.Workers))
-		for i, cidr := range metal.Networks.Workers {
-			workerCIDR := cidrvalidation.NewCIDR(cidr, metalPath.Child("networks", "workers").Index(i))
-			workerCIDRs = append(workerCIDRs, workerCIDR)
-			allErrs = append(allErrs, workerCIDR.ValidateParse()...)
-		}
-
-		allErrs = append(allErrs, validateCIDROVerlap(workerCIDRs, workerCIDRs, false)...)
-
-		if nodes != nil {
-			allErrs = append(allErrs, nodes.ValidateSubset(workerCIDRs...)...)
-		}
-
 		workersPath := metalPath.Child("workers")
 		if len(metal.Workers) == 0 {
 			allErrs = append(allErrs, field.Required(workersPath, "must specify at least one worker"))

@@ -76,9 +76,6 @@ func (b *MetalBotanist) generateTerraformInfraConfig(createRouter bool, routerID
 			"id": routerID,
 		},
 		"clusterName": b.Shoot.SeedNamespace,
-		"networks": map[string]interface{}{
-			"worker": b.Shoot.Info.Spec.Cloud.Metal.Networks.Workers[0],
-		},
 	}
 }
 

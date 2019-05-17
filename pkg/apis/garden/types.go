@@ -1131,7 +1131,7 @@ type MetalCloud struct {
 	// +optional
 	MachineImage *MetalMachineImage `json:"machineImage,omitempty"`
 	// Networks holds information about the Kubernetes and infrastructure networks.
-	Networks MetalNetworks
+	Networks MetalNetworks `json:"networks"`
 	// Workers is a list of worker groups.
 	Workers []MetalWorker `json:"workers"`
 	// Zones is a list of availability zones to deploy the Shoot cluster to.
@@ -1140,9 +1140,7 @@ type MetalCloud struct {
 
 // MetalNetworks holds information about the Kubernetes and infrastructure networks.
 type MetalNetworks struct {
-	gardencore.K8SNetworks
-	// Workers is a CIDR of a worker subnet (private) to create (used for the VMs).
-	Workers []gardencore.CIDR
+	gardencore.K8SNetworks `json:",inline"`
 }
 
 // MetalWorker is the definition of a worker group.

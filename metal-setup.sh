@@ -6,17 +6,18 @@ minikube start \
 echo "Waiting for minikube to be ready"
 timeout --foreground 180 bash -c 'until [ "$(kubectl get pods --all-namespaces)" != "" ]; do echo -n "." && sleep 3; done'
 
-helm init --history-max 200
-echo "Waiting for tiller to be ready"
-timeout --foreground 180 bash -c 'until [ "$(helm status)" != "release name is required" ]; do echo -n "." && sleep 3; done'
-
+echo "initializing helm"
+helm init --wait --history-max 200
 
 kubectl apply -f example/00-namespace-garden.yaml
 kubectl get pods --all-namespaces
+
+echo "install ingress"
 helm upgrade \
     --install \
     --namespace kube-system \
     nginx-ingress stable/nginx-ingress
+echo "install etcd-backup"
 helm upgrade \
     --install \
     --set tls= \
@@ -36,7 +37,7 @@ cd ~/go/src/github.com/gardener/machine-controller-manager \
     && cd -
 
 GARDENER_RELEASE=0.23.0-dev
-MACHINE_CONTROLLER_RELEASE=0.18.0-dev
+MACHINE_CONTROLLER_RELEASE=0.19.0-dev
 cat <<EOF > gardener-values.yaml
 global:
   apiserver:
@@ -90,8 +91,9 @@ gardenctl ls seeds
 
 kubectl get seed metal -o json | jq .status
 
+# Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
+kubectl apply -f example/00-namespace-garden-dev.yaml
 kubectl apply -f example/05-project-dev.yaml
-
 
 gardenctl target garden dev
 kubectl get project dev
