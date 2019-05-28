@@ -1,0 +1,18 @@
+---
+apiVersion: extensions.gardener.cloud/v1alpha1
+kind: OperatingSystemConfig
+metadata:
+  name: coreos
+  namespace: default
+spec:
+  type: coreos
+  purpose: bootstrap
+  files:
+  - path: /etc/metal/gardener.conf
+    permissions: 0644
+    content:
+      inline:
+        encoding: b64
+        data: |
+          # Our first file created with gardener
+          key=value
