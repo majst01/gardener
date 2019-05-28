@@ -1,3 +1,5 @@
+# based on https://github.com/gardener/gardener/blob/master/docs/deployment/aks.md
+
 minikube start \
   --vm-driver kvm2 \
   --memory=8192 \
@@ -23,7 +25,7 @@ helm upgrade \
     --install \
     --set tls= \
     --namespace garden \
-    etcd ~/dev/etcd-backup-restore/chart
+    etcd ~/dev/gardener/etcd-backup-restore/chart
 
 
 # This points docker to push images to the docker daemon inside minikube
@@ -122,6 +124,9 @@ EOF
 kubectl apply -f example/70-secret-cloudprovider-metal.yaml
 kubectl apply -f example/80-secretbinding-cloudprovider-metal.yaml
 
+# install os-coreos OperatingSystemConfig:coreos
+# answer with y only for coreos extension
+hack/dev-setup-extensions
 
 sed -i -e "s/provider: aws-route53/provider: unmanaged/" example/90-shoot-metal.yaml
 kubectl apply -f example/90-shoot-metal.yaml
