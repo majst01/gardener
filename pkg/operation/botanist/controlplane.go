@@ -339,6 +339,9 @@ func (b *Botanist) DeploySeedMonitoring() error {
 					"alertmanager": map[string]interface{}{
 						"enabled": b.Shoot.WantsAlertmanager,
 					},
+					"elasticsearch": map[string]interface{}{
+						"enabled": controllermanagerfeatures.FeatureGate.Enabled(features.Logging),
+					},
 				},
 			},
 			"shoot": map[string]interface{}{
@@ -419,10 +422,7 @@ func (b *Botanist) DeploySeedMonitoring() error {
 		}
 	}
 
-	if err := b.ApplyChartSeed(filepath.Join(common.ChartPath, "seed-monitoring"), b.Shoot.SeedNamespace, fmt.Sprintf("%s-monitoring", b.Shoot.SeedNamespace), nil, values); err != nil {
-		return err
-	}
-	return nil
+	return b.ApplyChartSeed(filepath.Join(common.ChartPath, "seed-monitoring"), b.Shoot.SeedNamespace, fmt.Sprintf("%s-monitoring", b.Shoot.SeedNamespace), nil, values)
 }
 
 // DeleteSeedMonitoring will delete the monitoring stack from the Seed cluster to avoid phantom alerts
@@ -487,6 +487,7 @@ func (b *Botanist) DeploySeedLogging() error {
 
 	images, err := b.InjectSeedSeedImages(map[string]interface{}{},
 		common.ElasticsearchImageName,
+		common.ElasticsearchMetricsExporterImageName,
 		common.CuratorImageName,
 		common.KibanaImageName,
 		common.AlpineImageName,
