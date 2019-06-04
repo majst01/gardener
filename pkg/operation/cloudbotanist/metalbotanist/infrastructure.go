@@ -61,7 +61,7 @@ func (b *MetalBotanist) generateTerraformInfraVariablesEnvironment() map[string]
 func (b *MetalBotanist) generateTerraformInfraConfig(createRouter bool, routerID string) map[string]interface{} {
 	return map[string]interface{}{
 		"metal": map[string]interface{}{
-			"metalAPIURL":          string(b.Shoot.Secret.Data["metal-api-url"]),
+			"metalAPIURL":          string(b.Shoot.Secret.Data[MetalAPIURL]),
 			"domainName":           string(b.Shoot.Secret.Data[DomainName]),
 			"tenantName":           string(b.Shoot.Secret.Data[TenantName]),
 			"region":               b.Shoot.Info.Spec.Cloud.Region,
@@ -117,10 +117,11 @@ func (b *MetalBotanist) generateTerraformBackupVariablesEnvironment() map[string
 func (b *MetalBotanist) generateTerraformBackupConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"metal": map[string]interface{}{
-			"metalAPIURL": string(b.Shoot.Secret.Data["metal-api-url"]),
-			"domainName":  string(b.Shoot.Secret.Data[DomainName]),
-			"tenantName":  string(b.Shoot.Secret.Data[TenantName]),
-			"region":      b.Shoot.Info.Spec.Cloud.Region,
+			// FIXME
+			// "metalAPIURL": string(b.Shoot.Secret.Data[MetalAPIURL]),
+			// "domainName":  string(b.Shoot.Secret.Data[DomainName]),
+			// "tenantName":  string(b.Shoot.Secret.Data[TenantName]),
+			// "region": b.Shoot.Info.Spec.Cloud.Region,
 		},
 		"container": map[string]interface{}{
 			"name": b.Operation.BackupInfrastructure.Name,

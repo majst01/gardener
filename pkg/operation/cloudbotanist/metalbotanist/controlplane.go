@@ -35,7 +35,7 @@ password=%q
 func (b *MetalBotanist) GenerateCloudProviderConfig() (string, error) {
 	cloudProviderConfig := fmt.Sprintf(
 		cloudProviderConfigTemplate,
-		string(b.Shoot.Secret.Data["metal-api-url"]),
+		string(b.Shoot.Secret.Data[MetalAPIURL]),
 		string(b.Shoot.Secret.Data[DomainName]),
 		string(b.Shoot.Secret.Data[TenantName]),
 		string(b.Shoot.Secret.Data[UserName]),
