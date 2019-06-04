@@ -42,13 +42,15 @@ helm upgrade \
 eval $(minikube docker-env)
 
 
+# set GOPATH accordingly
+
 # build gardener images --> pushed to docker daemon inside minikube
 make docker-images
 
-
 # build machine-controller-manager image --> pushed to docker daemon inside minikube
 cd ~/go/src/github.com/gardener/machine-controller-manager \
-    && make docker-images \
+    && hack/generate-code \
+    && make build docker-images \
     && cd -
 
 GARDENER_RELEASE=0.23.0-dev
@@ -101,14 +103,24 @@ EOF
 kubectl apply -f example/40-secret-seed-metal.yaml
 kubectl apply -f example/50-seed-metal.yaml
 
-gardenctl target garden dev
-kubectl get seed metal
-gardenctl ls seeds
+# download gardenctl from github
 
-kubectl get seed metal -o json | jq .status
 # Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
 kubectl apply -f example/00-namespace-garden-dev.yaml
 kubectl apply -f example/05-project-dev.yaml
+
+kubectl get seed metal
+
+cat <<EOF > ~/.garden/config
+---
+gardenClusters:
+- name: dev
+  kubeConfig: ~/.kube/config
+EOF
+
+gardenctl ls seeds
+
+kubectl get seed metal -o json | jq .status
 
 gardenctl target garden dev
 kubectl get project dev
@@ -133,6 +145,7 @@ EOF
 kubectl apply -f example/70-secret-cloudprovider-metal.yaml
 kubectl apply -f example/80-secretbinding-cloudprovider-metal.yaml
 
+# go get github.com/bronze1man/yaml2json
 # install os-coreos OperatingSystemConfig:coreos
 # answer with y only for coreos extension
 hack/dev-setup-extensions
