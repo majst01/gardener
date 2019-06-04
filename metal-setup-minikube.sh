@@ -1,4 +1,9 @@
+#!/usr/bin/env bash
 # based on https://github.com/gardener/gardener/blob/master/docs/deployment/aks.md
+
+set -e
+echo "do not execute, execute every command by hand"
+exit 1
 
 minikube start \
   --vm-driver kvm2 \
