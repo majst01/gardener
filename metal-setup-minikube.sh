@@ -13,6 +13,9 @@ echo "initializing helm"
 helm init --wait --history-max 200
 
 kubectl apply -f example/00-namespace-garden.yaml
+kubectl apply -f example/10-secret-internal-domain-unmanaged.yaml
+
+
 kubectl get pods --all-namespaces
 
 echo "install ingress"
@@ -21,6 +24,8 @@ helm upgrade \
     --namespace kube-system \
     nginx-ingress stable/nginx-ingress
 echo "install etcd-backup"
+
+# you need to clone https://github.com/gardener/etcd-backup-restore
 helm upgrade \
     --install \
     --set tls= \
@@ -33,7 +38,7 @@ eval $(minikube docker-env)
 
 
 # build gardener images --> pushed to docker daemon inside minikube
-make docker-images 
+make docker-images
 
 
 # build machine-controller-manager image --> pushed to docker daemon inside minikube
@@ -72,7 +77,7 @@ kubectl describe -f example/30-cloudprofile-metal.yaml
 
 
 KUBECONFIG_BASE64=$(kubectl config view --flatten=true | base64 -w 0)
-METAL_API_URL=$(echo metal.test.fi-ts.io | base64)
+METAL_API_URL=$(echo http://metal.test.fi-ts.io | base64)
 METAL_API_KEY=$(echo "your secret metal api token" | base64)
 cat <<EOF > example/40-secret-seed-metal.yaml
 ---
@@ -96,7 +101,6 @@ kubectl get seed metal
 gardenctl ls seeds
 
 kubectl get seed metal -o json | jq .status
-
 # Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
 kubectl apply -f example/00-namespace-garden-dev.yaml
 kubectl apply -f example/05-project-dev.yaml
@@ -128,13 +132,22 @@ kubectl apply -f example/80-secretbinding-cloudprovider-metal.yaml
 # answer with y only for coreos extension
 hack/dev-setup-extensions
 
+kubectl apply -f example/100-operatingsystemconfig-metal.yaml
+
+
 sed -i -e "s/provider: aws-route53/provider: unmanaged/" example/90-shoot-metal.yaml
 kubectl apply -f example/90-shoot-metal.yaml
 
 
 
+# look for logs with
+
+kubectl -n garden logs -f deployment/gardener-controller-manager
+gardenctl ls issues
+
+
 ```
 garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Could not initialize Shoot client for health check: secrets \"gardener\" not found" shoot=garden-dev/johndoe-metal
 garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Could not initialize Shoot client for garbage collection of shoot garden-dev/johndoe-metal: secrets \"gardener\" not found" shoot=garden-dev/johndoe-metal
-garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Attempt 1 failed to update Shoot garden-dev/johndoe-metal due to Operation cannot be fulfilled on shoots.garden.sapcloud.io \"johndoe-metal\": the object has been modified; please apply your changes to the latest version and try again"                                                              
+garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Attempt 1 failed to update Shoot garden-dev/johndoe-metal due to Operation cannot be fulfilled on shoots.garden.sapcloud.io \"johndoe-metal\": the object has been modified; please apply your changes to the latest version and try again"
 ```
