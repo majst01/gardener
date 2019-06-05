@@ -77,7 +77,7 @@ kubectl get pods --all-namespaces
 # install metallb
 kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.7.3/manifests/metallb.yaml
 
-cat <<EOF > metallb-config.yaml
+cat <<EOF > gen/metallb-config.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -91,18 +91,15 @@ data:
       addresses:
       - 10.222.0.1-10.222.0.10
 EOF
-kubectl apply -f metallb-config.yaml
-
-
-
+kubectl apply -f gen/metallb-config.yaml
 
 echo "install ingress"
 helm upgrade \
     --install \
     --namespace kube-system \
     nginx-ingress stable/nginx-ingress
-echo "install etcd-backup"
 
+echo "install etcd-backup"
 # you need to clone https://github.com/gardener/etcd-backup-restore
 helm upgrade \
     --install \
@@ -175,20 +172,10 @@ data:
 EOF
 
 kubectl apply -f gen/40-secret-seed-metal.yaml
-kubectl apply -f example/50-seed-metal.yaml
 
-ITERATION=0
-MAX_ITERATION=45
-set +e
-until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq ${MAX_ITERATION} ]]; do
-   (( ITERATION++ ))
-   sleep 1
-done
-set -e
-if [[ ${ITERATION} == ${MAX_ITERATION} ]]; then
-  echo "Cannot get seed metal"
-  exit 1
-fi
+kubectl apply -f example/50-seed-metal.yaml
+kubectl wait -f example/50-seed-metal.yaml --for condition=available --timeout=60s
+kubectl get seed metal -o json | jq .status
 
 # Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
 kubectl apply -f example/00-namespace-garden-dev.yaml
