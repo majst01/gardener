@@ -8,6 +8,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GO111MODULE=off
 GOPATH=${GOPATH-~}
 
+echo "Installing tools to ~/bin, please add this to your PATH"
+
 mkdir -p ~/bin
 
 if ! which minikube >/dev/null; then
@@ -25,6 +27,13 @@ if ! which kubectl >/dev/null; then
   chmod +x ~/bin/kubectl
 fi
 
+if ! which helm >/dev/null; then
+  curl -LSs https://get.helm.sh/helm-v2.14.0-linux-amd64.tar.gz -o ~/bin/helm.tar.gz
+  tar -zxvf ~/bin/helm.tar.gz linux-amd64/helm --strip-components 1 -C ~/bin
+  rm ~/bin/helm.tar.gz
+  chmod +x ~/bin/helm
+fi
+
 if ! which yaml2json >/dev/null; then
   go get github.com/bronze1man/yaml2json
 fi
@@ -39,9 +48,11 @@ if ! which stern >/dev/null; then
   chmod +x ~/bin/stern
 fi
 
+echo "Cloning projects to parent-dir"
+
 if [[ ! -d "$DIR/../etcd-backup-restore" ]]; then
   cd ..
-  git clone https://github.com/majst01/etcd-backup-restore.git
+  git clone https://github.com/gardener/etcd-backup-restore.git
   cd ${DIR}
 fi
 
@@ -54,6 +65,8 @@ fi
 cd ../machine-controller-manager
 git checkout metal-driver
 cd ${DIR}
+
+echo "Starting minikube"
 
 minikube delete
 
@@ -74,8 +87,12 @@ kubectl apply -f example/10-secret-internal-domain-unmanaged.yaml
 
 kubectl get pods --all-namespaces
 
+echo "Installing metallb"
+
 # install metallb
 kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.7.3/manifests/metallb.yaml
+
+mkdir gen
 
 cat <<EOF > gen/metallb-config.yaml
 apiVersion: v1
@@ -221,6 +238,9 @@ hack/dev-setup-extensions-os-coreos
 sleep 20
 
 kubectl apply -f example/100-operatingsystemconfig-metal.yaml
+
+
+echo "Creating Shoot"
 
 kubectl apply -f example/90-shoot-metal.yaml
 
