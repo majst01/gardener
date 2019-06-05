@@ -130,16 +130,18 @@ helm upgrade garden charts/gardener \
 
 kubectl delete secret -n garden internal-domain
 
-set +e
 ITERATION=0
-until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq 30 ]]; do
+MAX_ITERATION=45
+set +e
+until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq ${MAX_ITERATION} ]]; do
    (( ITERATION++ ))
    sleep 1
 done
-if [[ ${ITERATION} == 30 ]]; then
-  echo exit 1
-fi
 set -e
+if [[ ${ITERATION} == ${MAX_ITERATION} ]]; then
+  echo "Cannot get seed metal"
+  exit 1
+fi
 
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
