@@ -125,79 +125,84 @@ func (b *MetalBotanist) GenerateETCDStorageClassConfig() map[string]interface{} 
 
 // GenerateEtcdBackupConfig returns the etcd backup configuration for the etcd Helm chart.
 func (b *MetalBotanist) GenerateEtcdBackupConfig() (map[string][]byte, map[string]interface{}, error) {
-	containerName := "containerName"
 
-	tf, err := b.NewBackupInfrastructureTerraformer()
-	if err != nil {
-		return nil, nil, err
-	}
+	// FIXME
 
-	stateVariables, err := tf.GetStateOutputVariables(containerName)
-	if err != nil {
-		return nil, nil, err
-	}
+	//containerName := "containerName"
+	//
+	//tf, err := b.NewBackupInfrastructureTerraformer()
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+	//
+	//stateVariables, err := tf.GetStateOutputVariables(containerName)
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+	//
+	//secretData := map[string][]byte{
+	//	UserName:   b.Seed.Secret.Data[UserName],
+	//	Password:   b.Seed.Secret.Data[Password],
+	//	TenantName: b.Seed.Secret.Data[TenantName],
+	//	DomainName: b.Seed.Secret.Data[DomainName],
+	//}
+	//
+	//backupConfigData := map[string]interface{}{
+	//	"schedule":         b.Operation.ShootBackup.Schedule,
+	//	"storageProvider":  "Swift",
+	//	"storageContainer": stateVariables[containerName],
+	//	"env": []map[string]interface{}{
+	//		{
+	//			"name": "OS_AUTH_URL",
+	//			"valueFrom": map[string]interface{}{
+	//				"secretKeyRef": map[string]interface{}{
+	//					"name": common.BackupSecretName,
+	//					"key":  AuthURL,
+	//				},
+	//			},
+	//		},
+	//		{
+	//			"name": "OS_DOMAIN_NAME",
+	//			"valueFrom": map[string]interface{}{
+	//				"secretKeyRef": map[string]interface{}{
+	//					"name": common.BackupSecretName,
+	//					"key":  DomainName,
+	//				},
+	//			},
+	//		},
+	//		{
+	//			"name": "OS_USERNAME",
+	//			"valueFrom": map[string]interface{}{
+	//				"secretKeyRef": map[string]interface{}{
+	//					"name": common.BackupSecretName,
+	//					"key":  UserName,
+	//				},
+	//			},
+	//		},
+	//		{
+	//			"name": "OS_PASSWORD",
+	//			"valueFrom": map[string]interface{}{
+	//				"secretKeyRef": map[string]interface{}{
+	//					"name": common.BackupSecretName,
+	//					"key":  Password,
+	//				},
+	//			},
+	//		},
+	//		{
+	//			"name": "OS_TENANT_NAME",
+	//			"valueFrom": map[string]interface{}{
+	//				"secretKeyRef": map[string]interface{}{
+	//					"name": common.BackupSecretName,
+	//					"key":  TenantName,
+	//				},
+	//			},
+	//		},
+	//	},
+	//	"volumeMount": []map[string]interface{}{},
+	//}
+	//return secretData, backupConfigData, nil
 
-	secretData := map[string][]byte{
-		UserName:   b.Seed.Secret.Data[UserName],
-		Password:   b.Seed.Secret.Data[Password],
-		TenantName: b.Seed.Secret.Data[TenantName],
-		DomainName: b.Seed.Secret.Data[DomainName],
-	}
-
-	backupConfigData := map[string]interface{}{
-		"schedule":         b.Operation.ShootBackup.Schedule,
-		"storageProvider":  "Swift",
-		"storageContainer": stateVariables[containerName],
-		"env": []map[string]interface{}{
-			{
-				"name": "OS_AUTH_URL",
-				"valueFrom": map[string]interface{}{
-					"secretKeyRef": map[string]interface{}{
-						"name": common.BackupSecretName,
-						"key":  AuthURL,
-					},
-				},
-			},
-			{
-				"name": "OS_DOMAIN_NAME",
-				"valueFrom": map[string]interface{}{
-					"secretKeyRef": map[string]interface{}{
-						"name": common.BackupSecretName,
-						"key":  DomainName,
-					},
-				},
-			},
-			{
-				"name": "OS_USERNAME",
-				"valueFrom": map[string]interface{}{
-					"secretKeyRef": map[string]interface{}{
-						"name": common.BackupSecretName,
-						"key":  UserName,
-					},
-				},
-			},
-			{
-				"name": "OS_PASSWORD",
-				"valueFrom": map[string]interface{}{
-					"secretKeyRef": map[string]interface{}{
-						"name": common.BackupSecretName,
-						"key":  Password,
-					},
-				},
-			},
-			{
-				"name": "OS_TENANT_NAME",
-				"valueFrom": map[string]interface{}{
-					"secretKeyRef": map[string]interface{}{
-						"name": common.BackupSecretName,
-						"key":  TenantName,
-					},
-				},
-			},
-		},
-		"volumeMount": []map[string]interface{}{},
-	}
-	return secretData, backupConfigData, nil
+	return nil, nil, nil
 }
 
 // DeployCloudSpecificControlPlane does currently nothing for Metal.

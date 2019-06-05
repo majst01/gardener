@@ -20,19 +20,24 @@ import (
 
 // DeployInfrastructure kicks off a Terraform job which deploys the infrastructure.
 func (b *MetalBotanist) DeployInfrastructure() error {
-	var (
-		routerID     = "${metal_networking_router_v2.router.id}"
-		createRouter = true
-	)
 
-	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
-	if err != nil {
-		return err
-	}
-	return tf.
-		SetVariablesEnvironment(b.generateTerraformInfraVariablesEnvironment()).
-		InitializeWith(b.ChartInitializer("metal-infra", b.generateTerraformInfraConfig(createRouter, routerID))).
-		Apply()
+	// FIXME
+
+	//var (
+	//	routerID     = "${metal_networking_router_v2.router.id}"
+	//	createRouter = true
+	//)
+	//
+	//tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
+	//if err != nil {
+	//	return err
+	//}
+	//return tf.
+	//	SetVariablesEnvironment(b.generateTerraformInfraVariablesEnvironment()).
+	//	InitializeWith(b.ChartInitializer("metal-infra", b.generateTerraformInfraConfig(createRouter, routerID))).
+	//	Apply()
+
+	return nil
 }
 
 // DestroyInfrastructure kicks off a Terraform job which destroys the infrastructure.
@@ -81,14 +86,16 @@ func (b *MetalBotanist) generateTerraformInfraConfig(createRouter bool, routerID
 
 // DeployBackupInfrastructure kicks off a Terraform job which creates the infrastructure resources for backup.
 func (b *MetalBotanist) DeployBackupInfrastructure() error {
-	tf, err := b.NewBackupInfrastructureTerraformer()
-	if err != nil {
-		return err
-	}
-	return tf.
-		SetVariablesEnvironment(b.generateTerraformBackupVariablesEnvironment()).
-		InitializeWith(b.ChartInitializer("metal-backup", b.generateTerraformBackupConfig())).
-		Apply()
+	// FIXME
+	//tf, err := b.NewBackupInfrastructureTerraformer()
+	//if err != nil {
+	//	return err
+	//}
+	//return tf.
+	//	SetVariablesEnvironment(b.generateTerraformBackupVariablesEnvironment()).
+	//	InitializeWith(b.ChartInitializer("metal-backup", b.generateTerraformBackupConfig())).
+	//	Apply()
+	return nil
 }
 
 // DestroyBackupInfrastructure kicks off a Terraform job which destroys the infrastructure for backup.

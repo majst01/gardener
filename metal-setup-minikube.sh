@@ -23,6 +23,28 @@ kubectl apply -f example/10-secret-internal-domain-unmanaged.yaml
 
 kubectl get pods --all-namespaces
 
+# install metallb
+kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.7.3/manifests/metallb.yaml
+
+cat <<EOF > metallb-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: default
+      protocol: layer2
+      addresses:
+      - 10.222.0.1-10.222.0.10
+EOF
+kubectl apply -f metallb-config.yaml
+
+
+
+
 echo "install ingress"
 helm upgrade \
     --install \
@@ -153,16 +175,16 @@ hack/dev-setup-extensions
 kubectl apply -f example/100-operatingsystemconfig-metal.yaml
 
 
+## deploy shoot
+
 sed -i -e "s/provider: aws-route53/provider: unmanaged/" example/90-shoot-metal.yaml
 kubectl apply -f example/90-shoot-metal.yaml
-
 
 
 # look for logs with
 
 kubectl -n garden logs -f deployment/gardener-controller-manager
 gardenctl ls issues
-
 
 ```
 garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Could not initialize Shoot client for health check: secrets \"gardener\" not found" shoot=garden-dev/johndoe-metal
