@@ -130,18 +130,7 @@ helm upgrade garden charts/gardener \
 
 kubectl delete secret -n garden internal-domain
 
-ITERATION=0
-MAX_ITERATION=45
-set +e
-until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq ${MAX_ITERATION} ]]; do
-   (( ITERATION++ ))
-   sleep 1
-done
-set -e
-if [[ ${ITERATION} == ${MAX_ITERATION} ]]; then
-  echo "Cannot get seed metal"
-  exit 1
-fi
+sleep 10
 
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
@@ -165,6 +154,19 @@ EOF
 
 kubectl apply -f gen/40-secret-seed-metal.yaml
 kubectl apply -f example/50-seed-metal.yaml
+
+ITERATION=0
+MAX_ITERATION=45
+set +e
+until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq ${MAX_ITERATION} ]]; do
+   (( ITERATION++ ))
+   sleep 1
+done
+set -e
+if [[ ${ITERATION} == ${MAX_ITERATION} ]]; then
+  echo "Cannot get seed metal"
+  exit 1
+fi
 
 # Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
 kubectl apply -f example/00-namespace-garden-dev.yaml
