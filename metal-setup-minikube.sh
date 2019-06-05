@@ -2,8 +2,60 @@
 # based on https://github.com/gardener/gardener/blob/master/docs/deployment/aks.md
 
 set -e
-echo "do not execute, execute every command by hand"
-exit 1
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+GO111MODULE=off
+GOPATH=${GOPATH-~}
+
+mkdir -p ~/bin
+
+if ! which minikube >/dev/null; then
+  curl -LSs https://storage.googleapis.com/minikube/releases/v1.1.0/minikube-linux-amd64 -o ~/bin/minikube
+  chmod +x ~/bin/minikube
+fi
+
+if ! which gardenctl >/dev/null; then
+  curl -LSs https://github.com/gardener/gardenctl/releases/download/0.10.0/gardenctl-linux-amd64 -o ~/bin/gardenctl
+  chmod +x ~/bin/gardenctl
+fi
+
+if ! which kubectl >/dev/null; then
+  curl -LSs https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl -o ~/bin/kubectl
+  chmod +x ~/bin/kubectl
+fi
+
+if ! which yaml2json >/dev/null; then
+  go get github.com/bronze1man/yaml2json
+fi
+
+if ! which jq >/dev/null; then
+  sudo apt install -y jq
+fi
+
+# optional
+if ! which stern >/dev/null; then
+  curl -LSs https://github.com/wercker/stern/releases/download/1.10.0/stern_linux_amd64 -o ~/bin/stern
+  chmod +x ~/bin/stern
+fi
+
+if [[ ! -d "$DIR/../etcd-backup-restore" ]]; then
+  cd ..
+  git clone https://github.com/majst01/etcd-backup-restore.git
+  cd ${DIR}
+fi
+
+if [[ ! -d "$DIR/../machine-controller-manager" ]]; then
+  cd ..
+  git clone https://github.com/majst01/machine-controller-manager.git
+  cd ${DIR}
+fi
+
+cd ../machine-controller-manager
+git checkout metal-driver
+cd ${DIR}
+
+minikube delete
 
 minikube start \
   --vm-driver kvm2 \
@@ -19,7 +71,6 @@ helm init --wait --history-max 200
 
 kubectl apply -f example/00-namespace-garden.yaml
 kubectl apply -f example/10-secret-internal-domain-unmanaged.yaml
-
 
 kubectl get pods --all-namespaces
 
@@ -57,28 +108,26 @@ helm upgrade \
     --install \
     --set tls= \
     --namespace garden \
-    etcd ~/dev/gardener/etcd-backup-restore/chart
-
+    etcd ${DIR}/../etcd-backup-restore/chart
 
 # This points docker to push images to the docker daemon inside minikube
 eval $(minikube docker-env)
-
-
-# set GOPATH accordingly
 
 # build gardener images --> pushed to docker daemon inside minikube
 make docker-images
 
 # build machine-controller-manager image --> pushed to docker daemon inside minikube
-cd ~/go/src/github.com/gardener/machine-controller-manager \
+cd ../machine-controller-manager \
     && hack/generate-code \
-    && make build docker-images \
-    && cd -
+    && make build docker-images
+cd ${DIR}
 
 GARDENER_RELEASE=0.23.0-dev
 MACHINE_CONTROLLER_RELEASE=0.19.0-dev
 
-cat <<EOF > gardener-values.yaml
+mkdir -p gen
+
+cat <<EOF > gen/gardener-values.yaml
 global:
   apiserver:
     image:
@@ -99,16 +148,19 @@ helm upgrade garden charts/gardener \
   --namespace garden \
   --values=charts/gardener/values.yaml \
   --values=charts/gardener/local-values.yaml \
-  --values gardener-values.yaml
+  --values gen/gardener-values.yaml
+
+kubectl delete secret -n garden internal-domain
+
+sleep 10
 
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
 
-
 KUBECONFIG_BASE64=$(kubectl config view --flatten=true | base64 -w 0)
 METAL_API_URL=$(echo http://metal.test.fi-ts.io | base64)
 METAL_API_KEY=$(echo "your secret metal api token" | base64)
-cat <<EOF > example/40-secret-seed-metal.yaml
+cat <<EOF > gen/40-secret-seed-metal.yaml
 ---
 apiVersion: v1
 kind: Secret
@@ -122,10 +174,21 @@ data:
   kubeconfig: ${KUBECONFIG_BASE64}
 EOF
 
-kubectl apply -f example/40-secret-seed-metal.yaml
+kubectl apply -f gen/40-secret-seed-metal.yaml
 kubectl apply -f example/50-seed-metal.yaml
 
-# download gardenctl from github
+ITERATION=0
+MAX_ITERATION=45
+set +e
+until [[ $(kubectl get seed metal -o json | jq .status.conditions[0].type) == "\"Available\"" || ${ITERATION} -eq ${MAX_ITERATION} ]]; do
+   (( ITERATION++ ))
+   sleep 1
+done
+set -e
+if [[ ${ITERATION} == ${MAX_ITERATION} ]]; then
+  echo "Cannot get seed metal"
+  exit 1
+fi
 
 # Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
 kubectl apply -f example/00-namespace-garden-dev.yaml
@@ -133,6 +196,7 @@ kubectl apply -f example/05-project-dev.yaml
 
 kubectl get seed metal
 
+mkdir -p ~/.garden
 cat <<EOF > ~/.garden/config
 ---
 gardenClusters:
@@ -142,14 +206,12 @@ EOF
 
 gardenctl ls seeds
 
-kubectl get seed metal -o json | jq .status
-
 gardenctl target garden dev
 kubectl get project dev
 kubectl get ns garden-dev
 gardenctl ls projects
 
-cat <<EOF > example/70-secret-cloudprovider-metal.yaml
+cat <<EOF > gen/70-secret-cloudprovider-metal.yaml
 ---
 apiVersion: v1
 kind: Secret
@@ -164,30 +226,15 @@ data:
   metalAPIKey: ${METAL_API_KEY}
 EOF
 
-kubectl apply -f example/70-secret-cloudprovider-metal.yaml
+kubectl apply -f gen/70-secret-cloudprovider-metal.yaml
 kubectl apply -f example/80-secretbinding-cloudprovider-metal.yaml
 
-# go get github.com/bronze1man/yaml2json
-# install os-coreos OperatingSystemConfig:coreos
-# answer with y only for coreos extension
-hack/dev-setup-extensions
+hack/dev-setup-extensions-os-coreos
+
+sleep 20
 
 kubectl apply -f example/100-operatingsystemconfig-metal.yaml
 
-
-## deploy shoot
-
-sed -i -e "s/provider: aws-route53/provider: unmanaged/" example/90-shoot-metal.yaml
-kubectl apply -f example/90-shoot-metal.yaml
-
-
 # look for logs with
-
-kubectl -n garden logs -f deployment/gardener-controller-manager
 gardenctl ls issues
-
-```
-garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Could not initialize Shoot client for health check: secrets \"gardener\" not found" shoot=garden-dev/johndoe-metal
-garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Could not initialize Shoot client for garbage collection of shoot garden-dev/johndoe-metal: secrets \"gardener\" not found" shoot=garden-dev/johndoe-metal
-garden gardener-controller-manager-f8997db45-kk6rh gardener-controller-manager time="2019-05-27T13:46:43Z" level=error msg="Attempt 1 failed to update Shoot garden-dev/johndoe-metal due to Operation cannot be fulfilled on shoots.garden.sapcloud.io \"johndoe-metal\": the object has been modified; please apply your changes to the latest version and try again"
-```
+kubectl -n garden logs -f deployment/gardener-controller-manager

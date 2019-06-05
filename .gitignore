@@ -3,6 +3,7 @@
 /.kube-secrets
 /tmp/*
 /dev
+/gen
 
 *.coverprofile
 *.html
@@ -26,4 +27,3 @@ config.vmdk
 # Virtual go & fuse
 .virtualgo
 .fuse_hidden*
-
