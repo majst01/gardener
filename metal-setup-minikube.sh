@@ -235,6 +235,8 @@ sleep 20
 
 kubectl apply -f example/100-operatingsystemconfig-metal.yaml
 
+kubectl apply -f example/90-shoot-metal.yaml
+
 # look for logs with
 gardenctl ls issues
 kubectl -n garden logs -f deployment/gardener-controller-manager
