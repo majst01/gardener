@@ -92,7 +92,7 @@ echo "Installing metallb"
 # install metallb
 kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.7.3/manifests/metallb.yaml
 
-mkdir gen
+mkdir -p gen
 
 cat <<EOF > gen/metallb-config.yaml
 apiVersion: v1
@@ -138,8 +138,6 @@ cd ${DIR}
 
 GARDENER_RELEASE=0.23.0-dev
 MACHINE_CONTROLLER_RELEASE=0.19.0-dev
-
-mkdir -p gen
 
 cat <<EOF > gen/gardener-values.yaml
 global:
