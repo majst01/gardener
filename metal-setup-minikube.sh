@@ -12,6 +12,14 @@ echo "Installing tools to ~/bin, please add this to your PATH"
 
 mkdir -p ~/bin ~/.garden gen
 
+if [[ $# -ge 1 && $1 == "reinstall-tools" ]]; then
+    sudo rm -f $(which minikube)
+    sudo rm -f $(which gardenctl)
+    sudo rm -f $(which kubectl)
+    sudo rm -f $(which helm)
+    sudo rm -f $(which stern)
+fi
+
 if ! which minikube >/dev/null; then
   curl -LSs https://storage.googleapis.com/minikube/releases/v1.1.0/minikube-linux-amd64 -o ~/bin/minikube
   chmod +x ~/bin/minikube
@@ -28,10 +36,9 @@ if ! which kubectl >/dev/null; then
 fi
 
 if ! which helm >/dev/null; then
-  curl -LSs https://get.helm.sh/helm-v2.14.0-linux-amd64.tar.gz -o ~/bin/helm.tar.gz
-  tar -zxvf ~/bin/helm.tar.gz linux-amd64/helm --strip-components 1 -C ~/bin
-  rm ~/bin/helm.tar.gz
-  chmod +x ~/bin/helm
+  curl -LSs https://get.helm.sh/helm-v2.14.0-linux-amd64.tar.gz -o helm.tar.gz
+  tar xvf helm.tar.gz --strip-components 1 -C ~/bin linux-amd64/helm
+  rm helm.tar.gz
 fi
 
 if ! which yaml2json >/dev/null; then
