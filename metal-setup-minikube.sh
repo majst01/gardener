@@ -165,6 +165,9 @@ helm upgrade \
 
 kubectl delete secret -n garden internal-domain
 
+kubectl wait -n kube-system pod --all --for condition=ready --timeout=60s
+kubectl wait -n garden pod --all --for condition=ready --timeout=60s
+
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
 
@@ -188,7 +191,7 @@ EOF
 kubectl apply -f gen/40-secret-seed-metal.yaml
 
 kubectl apply -f example/50-seed-metal.yaml
-kubectl wait -f example/50-seed-metal.yaml --for condition=available --timeout=60s
+kubectl wait -f example/50-seed-metal.yaml --for condition=available --timeout=20s
 kubectl get seed metal -o json | jq .status
 
 echo "Creating a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)"
