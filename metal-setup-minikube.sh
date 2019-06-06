@@ -10,7 +10,7 @@ GOPATH=${GOPATH-~}
 
 echo "Installing tools to ~/bin, please add this to your PATH"
 
-mkdir -p ~/bin
+mkdir -p ~/bin ~/.garden gen
 
 if ! which minikube >/dev/null; then
   curl -LSs https://storage.googleapis.com/minikube/releases/v1.1.0/minikube-linux-amd64 -o ~/bin/minikube
@@ -67,8 +67,9 @@ git checkout metal-driver
 cd ${DIR}
 
 echo "Starting minikube"
-
+set +e
 minikube delete
+set -e
 
 minikube start \
   --vm-driver kvm2 \
@@ -79,7 +80,7 @@ minikube start \
 # Allow Tiller and Dashboard to run in RBAC mode
 kubectl create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
 
-echo "initializing helm"
+echo "Initializing helm"
 helm init --wait --history-max 200
 
 kubectl apply -f example/00-namespace-garden.yaml
@@ -88,11 +89,7 @@ kubectl apply -f example/10-secret-internal-domain-unmanaged.yaml
 kubectl get pods --all-namespaces
 
 echo "Installing metallb"
-
-# install metallb
 kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.7.3/manifests/metallb.yaml
-
-mkdir gen
 
 cat <<EOF > gen/metallb-config.yaml
 apiVersion: v1
@@ -110,27 +107,28 @@ data:
 EOF
 kubectl apply -f gen/metallb-config.yaml
 
-echo "install ingress"
+echo "Installing nginx-ingress"
 helm upgrade \
     --install \
     --namespace kube-system \
+    --wait \
     nginx-ingress stable/nginx-ingress
 
-echo "install etcd-backup"
-# you need to clone https://github.com/gardener/etcd-backup-restore
+echo "Installing etcd-backup"
 helm upgrade \
     --install \
     --set tls= \
     --namespace garden \
+    --wait \
     etcd ${DIR}/../etcd-backup-restore/chart
 
 # This points docker to push images to the docker daemon inside minikube
 eval $(minikube docker-env)
 
-# build gardener images --> pushed to docker daemon inside minikube
+echo "Building gardener images --> will be pushed to docker daemon inside minikube"
 make docker-images
 
-# build machine-controller-manager image --> pushed to docker daemon inside minikube
+echo "Building machine-controller-manager image --> will be pushed to docker daemon inside minikube"
 cd ../machine-controller-manager \
     && hack/generate-code \
     && make build docker-images
@@ -138,8 +136,6 @@ cd ${DIR}
 
 GARDENER_RELEASE=0.23.0-dev
 MACHINE_CONTROLLER_RELEASE=0.19.0-dev
-
-mkdir -p gen
 
 cat <<EOF > gen/gardener-values.yaml
 global:
@@ -157,16 +153,17 @@ global:
       tag: ${MACHINE_CONTROLLER_RELEASE:?"MACHINE_CONTROLLER_RELEASE is missing"}
 EOF
 
-helm upgrade garden charts/gardener \
-  --install \
-  --namespace garden \
-  --values=charts/gardener/values.yaml \
-  --values=charts/gardener/local-values.yaml \
-  --values gen/gardener-values.yaml
+echo "Installing gardener"
+helm upgrade \
+    --install \
+    --namespace garden \
+    --values=charts/gardener/values.yaml \
+    --values=charts/gardener/local-values.yaml \
+    --values gen/gardener-values.yaml \
+    --wait \
+    garden charts/gardener
 
 kubectl delete secret -n garden internal-domain
-
-sleep 10
 
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
@@ -194,13 +191,10 @@ kubectl apply -f example/50-seed-metal.yaml
 kubectl wait -f example/50-seed-metal.yaml --for condition=available --timeout=60s
 kubectl get seed metal -o json | jq .status
 
-# Create a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)
+echo "Creating a namespace for the first shoot cluster (control-plane is running in a namespace of the seed cluster)"
 kubectl apply -f example/00-namespace-garden-dev.yaml
 kubectl apply -f example/05-project-dev.yaml
 
-kubectl get seed metal
-
-mkdir -p ~/.garden
 cat <<EOF > ~/.garden/config
 ---
 gardenClusters:
@@ -231,17 +225,14 @@ data:
 EOF
 
 kubectl apply -f gen/70-secret-cloudprovider-metal.yaml
+
 kubectl apply -f example/80-secretbinding-cloudprovider-metal.yaml
 
 hack/dev-setup-extensions-os-coreos
 
-sleep 20
-
 kubectl apply -f example/100-operatingsystemconfig-metal.yaml
 
-
-echo "Creating Shoot"
-
+echo "Creating shoot"
 kubectl apply -f example/90-shoot-metal.yaml
 
 # look for logs with
