@@ -192,6 +192,8 @@ kubectl delete secret -n garden internal-domain
 kubectl wait -n kube-system pod --all --for condition=ready --timeout=60s
 kubectl wait -n garden pod --all --for condition=ready --timeout=60s
 
+sleep 5
+
 kubectl apply -f example/30-cloudprofile-metal.yaml
 kubectl describe -f example/30-cloudprofile-metal.yaml
 
