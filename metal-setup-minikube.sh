@@ -58,10 +58,12 @@ if ! which docker-machine-driver-kvm2 >/dev/null; then
   curl -LO https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-kvm2
   sudo install docker-machine-driver-kvm2 /usr/local/bin/
   rm -f docker-machine-driver-kvm2
+  set +e
   sudo systemctl enable libvirtd.service
   sudo systemctl start libvirtd.service
   sudo usermod -a -G libvirt $(whoami)
   newgrp libvirt
+  set -e
 fi
 
 # optional
