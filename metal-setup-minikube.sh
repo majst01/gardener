@@ -49,6 +49,21 @@ if ! which jq >/dev/null; then
   sudo apt install -y jq
 fi
 
+if ! which virsh >/dev/null; then
+  sudo apt install -y libvirt-bin libvirt-doc
+fi
+
+if ! which docker-machine-driver-kvm2 >/dev/null; then
+  sudo apt install -y libvirt-clients libvirt-daemon-system qemu-kvm
+  curl -LO https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-kvm2
+  sudo install docker-machine-driver-kvm2 /usr/local/bin/
+  rm -f docker-machine-driver-kvm2
+  sudo systemctl enable libvirtd.service
+  sudo systemctl start libvirtd.service
+  sudo usermod -a -G libvirt $(whoami)
+  newgrp libvirt
+fi
+
 # optional
 if ! which stern >/dev/null; then
   curl -LSs https://github.com/wercker/stern/releases/download/1.10.0/stern_linux_amd64 -o ~/bin/stern
