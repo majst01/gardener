@@ -37,8 +37,9 @@ func (b *MetalBotanist) GetMachineClassInfo() (classKind, classPlural, classChar
 // which is computed elsewhere).
 func (b *MetalBotanist) GenerateMachineClassSecretData() map[string][]byte {
 	return map[string][]byte{
-		machinev1alpha1.MetalAPIURL: []byte(b.Shoot.Secret.Data[MetalAPIURL]),
-		machinev1alpha1.MetalAPIKey: []byte(b.Shoot.Secret.Data[MetalAPIKey]),
+		machinev1alpha1.MetalAPIURL:  []byte(b.Shoot.Secret.Data[MetalAPIURL]),
+		machinev1alpha1.MetalAPIKey:  []byte(b.Shoot.Secret.Data[MetalAPIKey]),
+		machinev1alpha1.MetalAPIHMac: []byte(b.Shoot.Secret.Data[MetalAPIHMac]),
 	}
 }
 
@@ -47,43 +48,45 @@ func (b *MetalBotanist) GenerateMachineClassSecretData() map[string][]byte {
 // the desired availability zones. It returns the computed list of MachineClasses and MachineDeployments.
 func (b *MetalBotanist) GenerateMachineConfig() ([]map[string]interface{}, operation.MachineDeployments, error) {
 	var (
-		networkID         = "network_id"
-		keyName           = "key_name"
-		securityGroupName = "security_group_name"
-		outputVariables   = []string{networkID, keyName, securityGroupName}
-		workers           = b.Shoot.Info.Spec.Cloud.Metal.Workers
-		zones             = b.Shoot.Info.Spec.Cloud.Metal.Zones
-		zoneLen           = len(zones)
+		// networkID         = "network_id"
+		// keyName           = "key_name"
+		// outputVariables   = []string{networkID, keyName, securityGroupName}
+		workers = b.Shoot.Info.Spec.Cloud.Metal.Workers
+		zones   = b.Shoot.Info.Spec.Cloud.Metal.Zones
+		zoneLen = len(zones)
 
 		machineDeployments = operation.MachineDeployments{}
 		machineClasses     = []map[string]interface{}{}
 	)
-	tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
-	if err != nil {
-		return nil, nil, err
-	}
-	stateVariables, err := tf.GetStateOutputVariables(outputVariables...)
-	if err != nil {
-		return nil, nil, err
-	}
+	// tf, err := b.NewShootTerraformer(common.TerraformerPurposeInfra)
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
+	// stateVariables, err := tf.GetStateOutputVariables(outputVariables...)
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
 
-	for zoneIndex, zone := range zones {
+	for zoneIndex := range zones {
 		for _, worker := range workers {
 			machineClassSpec := map[string]interface{}{
-				"region":           b.Shoot.Info.Spec.Cloud.Region,
-				"availabilityZone": zone,
-				"machineType":      worker.MachineType,
-				"keyName":          stateVariables[keyName],
-				"imageName":        b.Shoot.Info.Spec.Cloud.Metal.MachineImage.Image,
-				"networkID":        stateVariables[networkID],
-				"podNetworkCidr":   b.Shoot.GetPodNetwork(),
-				"securityGroups":   []string{stateVariables[securityGroupName]},
-				"tags": map[string]string{
-					fmt.Sprintf("kubernetes.io-cluster-%s", b.Shoot.SeedNamespace): "1",
-					"kubernetes.io-role-node":                                      "1",
-				},
+				"partition": b.Shoot.Info.Spec.Cloud.Region,
+				"size":      worker.MachineType,
+				"project":   "gardener-test",
+				"tenant":    "devops",
+				// "keyName":          stateVariables[keyName],
+				"image": b.Shoot.Info.Spec.Cloud.Metal.MachineImage.Image,
+				// "networkID":        stateVariables[networkID],
+				// "podNetworkCidr":   b.Shoot.GetPodNetwork(),
+				// "tags": map[string]string{
+				// 	fmt.Sprintf("kubernetes.io-cluster-%s", b.Shoot.SeedNamespace): "1",
+				// 	"kubernetes.io-role-node":                                      "1",
+				// },
 				"secret": map[string]interface{}{
-					"cloudConfig": b.Shoot.CloudConfigMap[worker.Name].Downloader.Content,
+					"cloudConfig":  b.Shoot.CloudConfigMap[worker.Name].Downloader.Content,
+					"metalAPIKey":  b.Shoot.Secret.Data[MetalAPIKey],
+					"metalAPIHMac": b.Shoot.Secret.Data[MetalAPIHMac],
+					"metalAPIURL":  b.Shoot.Secret.Data[MetalAPIURL],
 				},
 			}
 
@@ -106,6 +109,7 @@ func (b *MetalBotanist) GenerateMachineConfig() ([]map[string]interface{}, opera
 			machineClassSpec["name"] = className
 			machineClassSpec["secret"].(map[string]interface{})[MetalAPIURL] = string(secretData[machinev1alpha1.MetalAPIURL])
 			machineClassSpec["secret"].(map[string]interface{})[MetalAPIKey] = string(secretData[machinev1alpha1.MetalAPIKey])
+			machineClassSpec["secret"].(map[string]interface{})[MetalAPIHMac] = string(secretData[machinev1alpha1.MetalAPIHMac])
 			machineClasses = append(machineClasses, machineClassSpec)
 		}
 	}

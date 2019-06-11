@@ -7,7 +7,7 @@ metadata:
 spec:
   cloud:
     profile: metal
-    region: fra-equ01
+    region: nbg-w8101
     secretBindingRef:
       name: core-metal
     metal:
@@ -16,7 +16,7 @@ spec:
         nodes: "192.168.1.0/24"
       workers:
       - name: cpu-worker
-        machineType: t1-small-x86
+        machineType: c1-xlarge-x86
         autoScalerMin: 2
         autoScalerMax: 2
         maxSurge: 1
@@ -24,7 +24,7 @@ spec:
       machineImage: 
         name: "coreos"
         image: "ubuntu-19.04"
-      zones: ['fra-equ01']
+      zones: ['nbg-w8101']
   kubernetes:
     version: 1.14.0
     allowPrivilegedContainers: true # 'true' means that all authenticated users can use the "gardener.privileged" PodSecurityPolicy, allowing full unrestricted access to Pod features.

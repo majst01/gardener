@@ -1,0 +1,24 @@
+cloudProvider: metal
+replicas: 1
+kubernetesVersion: 1.7.5
+configureRoutes: false
+clusterName: shoot-foo-bar
+podNetwork: 192.168.0.0/16
+environment: []
+additionalParameters: []
+podAnnotations: {}
+featureGates: {}
+  # CustomResourceValidation: true
+  # RotateKubeletServerCertificate: false
+image: metal-pod/metal-ccm:latest
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 300Mi
+
+# vpa is not supported yet
+vpa:
+  enabled: false

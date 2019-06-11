@@ -12,6 +12,7 @@ rules:
   - gcpmachineclasses
   - openstackmachineclasses
   - packetmachineclasses
+  - metalmachineclasses
   - machinedeployments
   - machines
   - machinesets

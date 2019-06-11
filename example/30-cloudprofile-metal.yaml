@@ -33,6 +33,6 @@ spec:
         volumeType: default
         volumeSize: 20Gi
       zones:
-      - region: fra-equ01
+      - region: nbg-w8101
         names:
-        - fra-equ01
+        - nbg-w8101
