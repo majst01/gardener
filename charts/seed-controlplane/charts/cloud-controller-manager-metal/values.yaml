@@ -10,7 +10,7 @@ podAnnotations: {}
 featureGates: {}
   # CustomResourceValidation: true
   # RotateKubeletServerCertificate: false
-image: metal-pod/metal-ccm:latest
+image: metalpod/metal-ccm:latest
 resources:
   requests:
     cpu: 100m

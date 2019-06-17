@@ -78,10 +78,11 @@ func (b *MetalBotanist) GenerateMachineConfig() ([]map[string]interface{}, opera
 				"image": b.Shoot.Info.Spec.Cloud.Metal.MachineImage.Image,
 				// "networkID":        stateVariables[networkID],
 				// "podNetworkCidr":   b.Shoot.GetPodNetwork(),
-				// "tags": map[string]string{
-				// 	fmt.Sprintf("kubernetes.io-cluster-%s", b.Shoot.SeedNamespace): "1",
-				// 	"kubernetes.io-role-node":                                      "1",
-				// },
+				"tags": []string{
+					fmt.Sprintf("Name-%s", b.Shoot.SeedNamespace),
+					fmt.Sprintf("kubernetes.io/cluster/%s", b.Shoot.SeedNamespace),
+					fmt.Sprintf("kubernetes.io/role/node"),
+				},
 				"secret": map[string]interface{}{
 					"cloudConfig":  b.Shoot.CloudConfigMap[worker.Name].Downloader.Content,
 					"metalAPIKey":  b.Shoot.Secret.Data[MetalAPIKey],
