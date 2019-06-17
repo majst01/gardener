@@ -39,7 +39,7 @@ func (b *MetalBotanist) GenerateMachineClassSecretData() map[string][]byte {
 	return map[string][]byte{
 		machinev1alpha1.MetalAPIURL:  []byte(b.Shoot.Secret.Data[MetalAPIURL]),
 		machinev1alpha1.MetalAPIKey:  []byte(b.Shoot.Secret.Data[MetalAPIKey]),
-		machinev1alpha1.MetalAPIHMac: []byte(b.Shoot.Secret.Data[MetalAPIHMac]),
+		MetalAPIHMac: []byte(b.Shoot.Secret.Data[MetalAPIHMac]), // TODO: Fix me
 	}
 }
 
@@ -109,7 +109,7 @@ func (b *MetalBotanist) GenerateMachineConfig() ([]map[string]interface{}, opera
 			machineClassSpec["name"] = className
 			machineClassSpec["secret"].(map[string]interface{})[MetalAPIURL] = string(secretData[machinev1alpha1.MetalAPIURL])
 			machineClassSpec["secret"].(map[string]interface{})[MetalAPIKey] = string(secretData[machinev1alpha1.MetalAPIKey])
-			machineClassSpec["secret"].(map[string]interface{})[MetalAPIHMac] = string(secretData[machinev1alpha1.MetalAPIHMac])
+			machineClassSpec["secret"].(map[string]interface{})[MetalAPIHMac] = string(secretData[MetalAPIHMac]) // TODO: FIX ME
 			machineClasses = append(machineClasses, machineClassSpec)
 		}
 	}

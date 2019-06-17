@@ -1071,6 +1071,12 @@ func validateAddons(addons *garden.Addons, fldPath *field.Path) field.ErrorList 
 			allErrs = append(allErrs, field.NotSupported(fldPath.Child("kubernetes-dashboard", "authenticationMode"), *authMode, availableKubernetesDashboardAuthenticationModes.List()))
 		}
 	}
+	if addons.MetalLB != nil && addons.MetalLB.Enabled {
+		if externalNetwork := addons.MetalLB.ExternalNetwork; len(externalNetwork) == 0 {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("metallb", "externalNetwork"), externalNetwork, "must provide an external network for metallb configuration"))
+		}
+	}
+
 
 	return allErrs
 }

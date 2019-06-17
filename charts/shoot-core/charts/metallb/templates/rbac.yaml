@@ -1,33 +1,37 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: metallb-system
+  name: kube-system
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 ---
 
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  namespace: metallb-system
+  namespace: kube-system
   name: controller
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  namespace: metallb-system
+  namespace: kube-system
   name: speaker
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: metallb-system:controller
+  name: kube-system:controller
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 rules:
   - apiGroups: [""]
@@ -43,8 +47,9 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: metallb-system:speaker
+  name: kube-system:speaker
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 rules:
   - apiGroups: [""]
@@ -54,10 +59,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: metallb-system
+  namespace: kube-system
   name: config-watcher
   labels:
     app: metallb
+    addonmanager.kubernetes.io/mode: Reconcile
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -71,39 +77,42 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: metallb-system:controller
+  name: kube-system:controller
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 subjects:
   - kind: ServiceAccount
     name: controller
-    namespace: metallb-system
+    namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: metallb-system:controller
+  name: kube-system:controller
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: metallb-system:speaker
+  name: kube-system:speaker
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 subjects:
   - kind: ServiceAccount
     name: speaker
-    namespace: metallb-system
+    namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: metallb-system:speaker
+  name: kube-system:speaker
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  namespace: metallb-system
+  namespace: kube-system
   name: config-watcher
   labels:
+    addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 subjects:
   - kind: ServiceAccount

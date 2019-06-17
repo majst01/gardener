@@ -1190,6 +1190,9 @@ var (
 
 // Addons is a collection of configuration for specific addons which are managed by the Gardener.
 type Addons struct {
+	// MetalLB holds the configuration settings for the MetalLB
+	// +optional
+	MetalLB *MetalLB `json:"metallb,omitempty"`
 	// KubernetesDashboard holds configuration settings for the kubernetes dashboard addon.
 	// +optional
 	KubernetesDashboard *KubernetesDashboard `json:"kubernetes-dashboard,omitempty"`
@@ -1197,7 +1200,6 @@ type Addons struct {
 	// DEPRECATED: This field will be removed in a future version.
 	// +optional
 	NginxIngress *NginxIngress `json:"nginx-ingress,omitempty"`
-
 	// ClusterAutoscaler holds configuration settings for the cluster autoscaler addon.
 	// DEPRECATED: This field will be removed in a future version.
 	// +optional
@@ -1234,6 +1236,12 @@ type HelmTiller struct {
 // Heapster describes configuration values for the heapster addon.
 type Heapster struct {
 	Addon `json:",inline"`
+}
+
+type MetalLB struct {
+	Addon `json:",inline"`
+	// ExternalNetwork is the configuration for MetalLB externalNetwork
+	ExternalNetwork string `json:"externalNetwork,omitempty"`
 }
 
 // KubernetesDashboard describes configuration values for the kubernetes-dashboard addon.

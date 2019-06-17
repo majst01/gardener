@@ -119,7 +119,7 @@ cat <<EOF > gen/metallb-config.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  namespace: metallb-system
+  namespace: kube-system
   name: config
 data:
   config: |

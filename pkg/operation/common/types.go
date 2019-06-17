@@ -394,7 +394,7 @@ const (
 	KubeAddonManagerImageName = "kube-addon-manager"
 
 	// MetallbPeerImageName is the name of the metallb peer image.
-	MetallbPeerImageName = "metallb-peer"
+	MetallbSpeaker = "metallb-speaker"
 
 	// MetallbControllerImageName is the name of the metallb controller image
 	MetallbControllerImageName = "metallb-controller"

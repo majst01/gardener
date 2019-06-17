@@ -43,6 +43,9 @@ func (b *HybridBotanist) generateCoreAddonsChart() (*chartrenderer.RenderedChart
 			"kubernetesVersion": b.Shoot.Info.Spec.Kubernetes.Version,
 			"podNetwork":        b.Shoot.GetPodNetwork(),
 		}
+		metallbConfig = map[string]interface{}{
+			"externalNetwork": b.Shoot.Info.Spec.Addons.MetalLB.ExternalNetwork,
+		}
 		calicoConfig = map[string]interface{}{
 			"cloudProvider": b.Shoot.CloudProvider,
 		}
@@ -105,7 +108,7 @@ func (b *HybridBotanist) generateCoreAddonsChart() (*chartrenderer.RenderedChart
 		return nil, err
 	}
 
-	metallb , err := b.InjectShootShootImages(nil, common.MetallbControllerImageName, common.MetallbPeerImageName)
+	metallb , err := b.InjectShootShootImages(metallbConfig, common.MetallbControllerImageName, common.MetallbSpeaker)
 	if err != nil {
 		return nil, err
 	}
