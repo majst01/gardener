@@ -105,6 +105,11 @@ func (b *HybridBotanist) generateCoreAddonsChart() (*chartrenderer.RenderedChart
 		return nil, err
 	}
 
+	metallb , err := b.InjectShootShootImages(nil, common.MetallbControllerImageName, common.MetallbPeerImageName)
+	if err != nil {
+		return nil, err
+	}
+
 	coreDNS, err := b.InjectShootShootImages(coreDNSConfig, common.CoreDNSImageName)
 	if err != nil {
 		return nil, err
@@ -157,6 +162,7 @@ func (b *HybridBotanist) generateCoreAddonsChart() (*chartrenderer.RenderedChart
 		"kube-proxy":     kubeProxy,
 		"vpn-shoot":      vpnShoot,
 		"calico":         calico,
+		"metallb": metallb,
 		"metrics-server": metricsServer,
 		"monitoring": map[string]interface{}{
 			"node-exporter":     nodeExporter,

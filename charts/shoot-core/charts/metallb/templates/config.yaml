@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    peers:
+    - peer-address: "{{ .Values.bgp.peerAddress }}"
+      peer-asn: "{{ .Values.bgp.peerASN }}"
+      my-asn: "{{ .Values.bgp.myASN }}"
+    address-pools:
+    - name: default
+      protocol: bgp
+      addresses:
+      - "{{ .Values.podNetwork }}"

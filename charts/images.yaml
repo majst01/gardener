@@ -82,6 +82,14 @@ images:
   tag: v0.3.1
 
 # Shoot core addons
+- name: metallb-controller
+  sourceRepository:
+  repository: metallb/speaker
+  tag: v0.7.3
+- name: metallb-speaker
+  sourceRepository:
+  repository: metallb/controller
+  tag: v0.7.3
 - name: calico-node
   sourceRepository: github.com/projectcalico/calico
   repository: quay.io/calico/node
