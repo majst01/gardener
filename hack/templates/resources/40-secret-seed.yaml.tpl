@@ -79,6 +79,7 @@ data:
   % if cloud == "metal":
   metalAPIURL: ${value("data.metalAPIURL", "base64(metal-api-url)")}
   metalAPIKey: ${value("data.metalAPIKey", "base64(metal-api-key)")}
+  metalAPIHMac: ${value("data.metalAPIHMac", "base64(metal-api-hmac)")}
   % endif
   % if cloud == "local":
   % endif

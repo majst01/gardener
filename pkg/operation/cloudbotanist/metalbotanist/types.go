@@ -36,6 +36,7 @@ const (
 	// AuthURL is a constant for the key in a backup secret that holds the Metal authentication URL.
 	AuthURL = "authURL"
 
-	MetalAPIURL = "metalAPIURL"
-	MetalAPIKey = "metalAPIKey"
+	MetalAPIURL  = "metalAPIURL"
+	MetalAPIHMac = "metalAPIHMac"
+	MetalAPIKey  = "metalAPIKey"
 )

@@ -92,7 +92,7 @@ func (b *MetalBotanist) GenerateKubeAPIServerConfig() (map[string]interface{}, e
 // GenerateCloudControllerManagerConfig generates the cloud provider specific values which are required to
 // render the Deployment manifest of the cloud-controller-manager properly.
 func (b *MetalBotanist) GenerateCloudControllerManagerConfig() (map[string]interface{}, string, error) {
-	return nil, common.CloudControllerManagerDeploymentName, nil
+	return nil, common.CloudControllerManagerDeploymentName + "-metal", nil
 }
 
 // GenerateCSIConfig generates the configuration for CSI charts
@@ -103,7 +103,9 @@ func (b *MetalBotanist) GenerateCSIConfig() (map[string]interface{}, error) {
 // GenerateKubeControllerManagerConfig generates the cloud provider specific values which are required to
 // render the Deployment manifest of the kube-controller-manager properly.
 func (b *MetalBotanist) GenerateKubeControllerManagerConfig() (map[string]interface{}, error) {
-	return nil, nil
+	return map[string]interface{}{
+		"enableCSI": true,
+	}, nil
 }
 
 // GenerateKubeSchedulerConfig generates the cloud provider specific values which are required to render the
@@ -118,7 +120,7 @@ func (b *MetalBotanist) GenerateETCDStorageClassConfig() map[string]interface{} 
 	return map[string]interface{}{
 		"name":        "gardener.cloud-fast",
 		"capacity":    "25Gi",
-		"provisioner": "k8s.io/minikube-hostpath",
+		"provisioner": "rancher.io/local-path", //  TODO: Just use default storage class?
 		"parameters":  map[string]interface{}{},
 	}
 }
