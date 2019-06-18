@@ -20,7 +20,7 @@ spec:
       machineImages:
       - name: ubuntu
         image: ubuntu-18.04
-      - name: os-metal
+      - name: metal
         image: ubuntu-19.04
       - name: alpine
         image: alpine-3.9
