@@ -53,6 +53,8 @@ for extension in `echo "$extensions" | jq -r '.[].name'`; do
     echo "    > ERROR: Could not find the file $controllerregistration."
     continue
   fi
+  echo "$controllerregistration" 
+
   if kubectl apply -f "$controllerregistration" | sed 's/^/     /'; then
     echo "    > Successfully installed."
   fi

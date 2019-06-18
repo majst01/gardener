@@ -138,6 +138,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MaintenanceTimeWindow":         schema_pkg_apis_garden_v1beta1_MaintenanceTimeWindow(ref),
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalCloud":                    schema_pkg_apis_garden_v1beta1_MetalCloud(ref),
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalConstraints":              schema_pkg_apis_garden_v1beta1_MetalConstraints(ref),
+		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalLB":                       schema_pkg_apis_garden_v1beta1_MetalLB(ref),
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalLoadBalancerProvider":     schema_pkg_apis_garden_v1beta1_MetalLoadBalancerProvider(ref),
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalMachineImage":             schema_pkg_apis_garden_v1beta1_MetalMachineImage(ref),
 		"github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalMachineType":              schema_pkg_apis_garden_v1beta1_MetalMachineType(ref),
@@ -1762,6 +1763,12 @@ func schema_pkg_apis_garden_v1beta1_Addons(ref common.ReferenceCallback) common.
 				Description: "Addons is a collection of configuration for specific addons which are managed by the Gardener.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"metallb": {
+						SchemaProps: spec.SchemaProps{
+							Description: "MetalLB holds the configuration settings for the MetalLB",
+							Ref:         ref("github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalLB"),
+						},
+					},
 					"kubernetes-dashboard": {
 						SchemaProps: spec.SchemaProps{
 							Description: "KubernetesDashboard holds configuration settings for the kubernetes dashboard addon.",
@@ -1808,7 +1815,7 @@ func schema_pkg_apis_garden_v1beta1_Addons(ref common.ReferenceCallback) common.
 			},
 		},
 		Dependencies: []string{
-			"github.com/gardener/gardener/pkg/apis/garden/v1beta1.ClusterAutoscaler", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Heapster", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Kube2IAM", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.KubeLego", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.KubernetesDashboard", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Monocular", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.NginxIngress"},
+			"github.com/gardener/gardener/pkg/apis/garden/v1beta1.ClusterAutoscaler", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Heapster", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Kube2IAM", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.KubeLego", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.KubernetesDashboard", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalLB", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Monocular", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.NginxIngress"},
 	}
 }
 
@@ -4889,6 +4896,33 @@ func schema_pkg_apis_garden_v1beta1_MetalConstraints(ref common.ReferenceCallbac
 		},
 		Dependencies: []string{
 			"github.com/gardener/gardener/pkg/apis/garden/v1beta1.DNSProviderConstraint", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.KubernetesConstraints", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalLoadBalancerProvider", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalMachineImage", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.MetalMachineType", "github.com/gardener/gardener/pkg/apis/garden/v1beta1.Zone"},
+	}
+}
+
+func schema_pkg_apis_garden_v1beta1_MetalLB(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"enabled": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Enabled indicates whether the addon is enabled or not.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"externalNetwork": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ExternalNetwork is the configuration for MetalLB externalNetwork",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"enabled"},
+			},
+		},
 	}
 }
 
