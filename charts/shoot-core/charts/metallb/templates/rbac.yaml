@@ -6,7 +6,6 @@ metadata:
     addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
 ---
-
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,7 +23,6 @@ metadata:
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
     app: metallb
-
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -123,6 +121,3 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: config-watcher
-
-
-

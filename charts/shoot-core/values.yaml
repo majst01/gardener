@@ -48,10 +48,6 @@ csi-alicloud:
     accessKeySecret: secret
   enabled: false
 metallb:
-  bgp:
-    peerAddress: 10.0.0.1
-    peerASN: 64501
-    myASN: 64500
   externalNetwork: 192.168.10.0/24
   images:
     metallb-speaker: image-repository:image-tag
